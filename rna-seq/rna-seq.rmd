@@ -1,0 +1,838 @@
+---
+title: "RNA-seq"
+author: "Chayce Reed"
+date: "2025-10-17"
+output:
+  html_document:
+    toc: true
+    toc_float: true
+    number_sections: false
+    theme: readable
+    df_print: paged
+---
+
+## Overview
+
+In this project, I analyze an RNA-seq count matrix and associated sample metadata to explore the expression of two genes of interest, **CLOCK** and **ABCA1**, across tissue types and cancer stages. The analysis includes basic data preparation, summary statistics, exploratory plots, and visualization of gene expression patterns using heatmaps and formatted tables.
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+### Data Preparation
+
+a. Download the Sample RNA-seq  Count Matrix and associated Metadata.
+  i. Ensure that you have both the count matrix and the metadata file available for your analysis.
+```{r}
+library(ggplot2) # for core plotting functions and features
+library(biomaRt) ## for the gene name database
+library(ggbeeswarm) ## for ggbeeswarm plot
+library(ComplexHeatmap) ## for the heatmap
+library(circlize) ## for colorRamp2 in the heatmap
+
+# NOTE FOR READING COMMENTS:
+# Single #: comment from first check in
+# Double ##: comment from second check in
+# Triple ###: comment from final version
+
+# first, lets define our main file path
+filepath <- "./data/"
+
+# when reading the data, the metadata column names were being automatically renamed to replace
+# the hyphens with periods. 
+
+# prompt to Claude Sonnet 4 2025-05-14 (chat.dartmouth.edu): 
+# in R, when I am reading in a counts.csv file related to gene data, the hyphens in the 
+# column names are automatically being replaced with periods, how do I resolve this 
+# issue so it keeps the original column names when read.csv
+
+# response from Claude Sonnet 4 2025-05-14 (chat.dartmouth.edu):
+# This is a common issue in R! When using read.csv(), R automatically converts invalid column names 
+# to valid R syntax by replacing characters like hyphens with periods. Here are several ways to resolve this:
+# Option 1: Use check.names = FALSE
+# This prevents R from modifying column names
+# counts <- read.csv("counts.csv", check.names = FALSE)
+
+# now, lets read in our two files, the counts data and the metadata
+# using check.names = FALSE (based on the above discussion) to retain original column names
+metadata <- read.csv(paste0(filepath, "meta_data.csv"), row.names = 1, check.names = FALSE)
+# using check.names = FALSE (based on the above discussion) to retain original column names
+counts <- read.csv(paste0(filepath, "counts.csv"), row.names = 1, check.names = FALSE)
+```
+
+### Gene Selection and Summary Statistics
+
+a. Select One Gene: choose a gene from the dataset that interests you.
+```{r}
+# now, lets select our genes
+# CLOCK - ENSG00000134852.15
+# ABCA1 - ENSG00000165029.17
+
+# when selecting the genes, i was looking for something related to lifestyle habits
+# i selected CLOCK, or ENSG00000134852.15, because it is helps regulate key physiological processes,
+# such as sleep-wake cycles, hormone release, body temperature 
+# and metabolism (Claude Sonnet 4 2025-05-14, chat.dartmouth.edu)
+# for the second gene, i tried many different options, but eventually landed on ABCA1, or 
+# ENSG00000165029.17, due to its relation to CLOCK, with similar regulatory functions 
+# involving circadian rhythms and metabolism (Claude Sonnet 4 2025-05-14, chat.dartmouth.edu)
+
+# note: throughout the script, instead of hardcoding the column name
+# ive decided to use gene_metadata[,1] (or gene_metadata[,2] for the second selected gene), 
+# to make it dynamic and easier to change the selected genes and try different combinations. 
+# this way, if i change a gene, i only need to change it in this original selection
+
+## creating new variables for selected genes
+selected_genes = c("ENSG00000134852", "ENSG00000165029", "ENSG00000000003", "ENSG00000000005",
+                   "ENSG00000000419", "ENSG00000000457", "ENSG00000000460", "ENSG00000000938",
+                   "ENSG00000000971", "ENSG00000001036")
+primary_gene <- "CLOCK"
+secondary_gene <- "ABCA1"
+gene_data <- counts[selected_genes,]
+
+## in order to properly retrieve and merge the row names below, we need to remove the version
+## for example, ENSG00000134852.15 -> ENSG00000134852
+
+## prompt to Claude Sonnet 4 2025-05-14 (chat.dartmouth.edu): 
+## in r, how can I retrieve the substring before the first . in a string that looks like ENSG00000134852.15
+
+## response from Claude Sonnet 4 2025-05-14 (chat.dartmouth.edu):
+## gene_id <- "ENSG00000134852.15"
+## # Remove the dot and everything after it
+## clean_id <- sub("\\..*", "", gene_id)
+## print(clean_id)
+## # Output: "ENSG00000134852"
+
+## so sub("\\..*", "", gene_id) replace everything after the first .
+## lets replace the current gene ids to remove the versions 
+rownames(gene_data) <- sub("\\..*", "", rownames(gene_data))
+
+## one thing i really want to improve for the second check-in is the readability
+## of the gene names, but i also dont want to hardcode the gene names either
+
+## prompt to Claude Sonnet 4 2025-05-14 (chat.dartmouth.edu): 
+## in R, if I have the ensembl gene id, how can I retrieve the gene name?
+
+## response from Claude Sonnet 4 2025-05-14 (chat.dartmouth.edu):
+## There are several methods to convert Ensembl gene IDs to gene names in R. Here are the most common approaches:
+## 1. Using biomaRt (Most Flexible)
+## library(biomaRt)
+## # Connect to Ensembl
+## ensembl <- useMart("ensembl", dataset = "hsapiens_gene_ensembl")
+## # Your Ensembl IDs
+## gene_ids <- c("ENSG00000139618", "ENSG00000141510", "ENSG00000134086")
+## # Retrieve gene names
+## results <- getBM(
+##   attributes = c("ensembl_gene_id", "external_gene_name", "description"),
+##   filters = "ensembl_gene_id",
+##   values = gene_ids,
+##   mart = ensembl
+## )
+## print(results)
+
+## now, this line establishes a connection to the biomart database
+## ensembl = the specific service we want to use
+## hsapiens_gene_ensembl = specifies we are using human gene data
+ensembl_db <- useMart("ensembl", dataset = "hsapiens_gene_ensembl")
+
+gene_names <- getBM(
+  ## we only need the gene name returned
+  attributes = c("ensembl_gene_id", "external_gene_name"),
+  ## we are filtering based on the supplied gene id
+  filters = "ensembl_gene_id",
+  ## gene ids, minus the version
+  values = selected_genes, 
+  ## connect to the ensembl database
+  mart = ensembl_db
+)
+
+## now that we have our gene names, lets rename the rows with it
+## first, lets make the gene id the row names, so that we can merge
+rownames(gene_names) <- gene_names$ensembl_gene_id
+## we can remove the old column, since its no longer needed
+gene_names <- subset(gene_names, select = -c(ensembl_gene_id))
+## now, we can merge the gene data with the gene names using the row names (gene ids)
+gene_data <- merge(gene_data, gene_names, by = "row.names", all = TRUE)
+## lets use the gene names for the row names (instead of the gene ids)
+rownames(gene_data) <- gene_names$external_gene_name
+## now, lets remove the two old columns, since we will just reference the row names directly
+gene_data <- subset(gene_data, select = -c(external_gene_name))
+gene_data <- subset(gene_data, select = -c(Row.names))
+```
+
+b. Generate Summary Statistics: Using the count data from the selected gene, compute and report summary statistics, such as mean, median, standard deviation, minimum, and maximum. 
+
+```{r}
+# lets transform the gene data, to align the row names with the metadata
+gene_data_t <- t(gene_data)
+
+# finally, lets merge the count and metadata based on the row names (aka sample ids)
+gene_metadata <- merge(gene_data_t, metadata, by = "row.names", all = TRUE)
+
+# now, we can cleanup the data and remove the extra column
+rownames(gene_metadata) <- gene_metadata$Row.names
+gene_metadata <- subset(gene_metadata, select = -c(Row.names))
+
+# summary statistics for CLOCK - ENSG00000134852.15
+summary(gene_metadata[[primary_gene]])
+paste("Standard Deviation:", round(sd(gene_metadata[[primary_gene]]), 2))
+```
+
+### Visualization
+
+a. Create a Histogram: Use ggplot2 to generate a histogram of the count data for the selected gene. This visualization should effectively display the distribution of the counts. 
+
+```{r}
+# lets start off with creating our own palette for these visuals
+# ive never created my own custom palette before, so lets learn how to
+
+# prompt to Claude Sonnet 4 2025-05-14 (chat.dartmouth.edu): 
+# in R, how can I create and use my own color palette when creating ggplot2 plots
+
+# response from Claude Sonnet 4 2025-05-14 (chat.dartmouth.edu):
+# # Create your palette
+# my_palette <- c("#FF6B6B", "#4ECDC4", "#45B7D1", "#96CEB4", "#FFEAA7")
+# # Use with discrete data
+# ggplot(data, aes(x = variable, fill = category)) +
+#   geom_bar() +
+#   scale_fill_manual(values = my_palette)
+
+# lets define our variable and pick out some nice looking colors
+# also, lets make sure there is enough contrast to show the differences
+# in the tissue_types for the scatter plot
+# colors were pulled from https://coolors.co/colors
+custom_palette <- c("#4cc9f0", "#7209b7", "#ff0054")
+
+# lets create our histogram
+hist <- ggplot(gene_metadata, aes(x = !!sym(primary_gene))) +
+          # after starting out with a basic histogram, i wanted to add more layers and make it
+          # look nicer. I came across https://r-charts.com/ggplot2/, which gave me the idea
+          # and examples needed to create the density curve layer.
+          # the aes(y = ..density..) is needed to convert the histogram from showing raw counts to
+          # showing density, allowing for the density curve to be layered on 
+          # correctly (Claude Sonnet 4 2025-05-14, chat.dartmouth.edu).
+          geom_histogram(bins = 30, aes(y = ..density..), color = "black", fill = "white") +
+          # once again, used the example from https://r-charts.com/ggplot2/ to create this 
+          # density curve layer, then adjust the parameters to better fit my desired style.
+          geom_density(lwd = 0.5, color = custom_palette[3], fill = custom_palette[3], alpha = 0.2) +
+          # labs() from Week 2 - Lecture notes
+          # once again using colnames() to avoid hardcoding the gene name
+          labs(
+            # histogram plot title
+            title = "Histogram", 
+            ## adding subtitle
+            subtitle = paste("Count Data -", primary_gene),
+            # x axis label
+            x = primary_gene, 
+            # y axis label
+            y = "Frequency"
+          ) +
+          # theme() from the Week 2 - Lecture notes, text formatting
+          ## adding face = "bold", got this idea from
+          ## watching Jillian Melbourne's check in video
+          theme(
+            # default text size
+            text = element_text(size = 12), 
+            # axis title size
+            axis.title = element_text(size = 10, face = "bold"), 
+            # axis text size
+            ## adjusted axis text size from 10 to 8
+            axis.text = element_text(size = 8), 
+            # legend title size
+            legend.title = element_text(size = 10, face = "bold"), 
+            # legend text size
+            legend.text = element_text(size = 10), 
+            # plot title size and centering
+            plot.title = element_text(size = 10, hjust = 0.5, face = "bold"),
+            ## plot subtitle size, centering, and boldface
+            plot.subtitle = element_text(size = 12, hjust = 0.5, face = "bold"),
+            # another idea from https://r-charts.com/ggplot2/
+            # a lighter background (compared to the default gray) helps the
+            # colors stand out more
+            panel.background = element_rect(fill = "#F5F5F5"),
+          )
+
+## lets try adding some summary statistics to the histogram
+## i think the min, median, mean, and max would be useful to display
+
+## first, lets determine our min, median, mean, and max and save them to our variables
+hist_min <- round(min(gene_metadata[[primary_gene]]))
+hist_median <- round(median(gene_metadata[[primary_gene]]))
+hist_mean <- round(mean(gene_metadata[[primary_gene]]))
+hist_max <- round(max(gene_metadata[[primary_gene]]))
+
+## next, lets use paste0() to create one, cohesive label
+## using \n to stack the statistics, so each is on a new line
+stats_label <- paste0("Min: ", hist_min, 
+                      "\nMedian: ", hist_median, 
+                      "\nMean: ", hist_mean, 
+                      "\nMax: ", hist_max)
+
+## now, we can use annotate() to add our stats_label
+## lets try to position it in the top right, where there is a lot of white space
+hist <- hist + 
+  annotate("text", 
+           x = Inf, 
+           y = -Inf, 
+           label = stats_label, 
+           hjust = 1.0, 
+           vjust = -3.3,
+           size = 4, 
+           color = "black")
+
+hist
+```
+
+b. Create a Scatter Plot: Select a second gene from the dataset. Create a scatter plot using ggplot2 to compare the count data of the two selected genes. 
+
+```{r}
+# to fit a linear model from the Week 3 - Lecture notes
+# fit a linear model based on our two genes, to use in the scatter plot
+model <- lm(gene_metadata[,1] ~ gene_metadata[,2], data = gene_metadata)
+# define our coefficients
+coefficients <- coef(model)
+# define our y intercept
+intercept <- coefficients[1]
+# define our slop
+slope <- coefficients[2]
+# create our label to display on the plot
+eq_label <- paste0("y = ", round(slope, 2), "x + ", round(intercept, 2))
+
+# next, lets create our scatter plot
+# basic ggplot scatter plot, decided to add color = tissue_type group to add more
+# information to the plot
+# also, decided to add the regression line from Week 3 - Lecture notes
+scatter <- ggplot(gene_metadata, aes(x = !!sym(primary_gene), y = !!sym(secondary_gene), color = tissue_type)) +
+            # geom_point() for scatter plot, 
+            # alpha = 0.5 helps to better show the distinction between the two tissue types
+            geom_point(alpha = 0.5) +
+            # geom_smooth() from Week 3 - Lecture notes for the linear model
+            ## making the lm line and equation label black
+            ## black makes the label and line pop more, and looks cleaner with the now-bold titles
+            geom_smooth(method = "lm", color = "black") +
+            # from Week 3 - Lecture notes
+            # use the eq_label we built above and display it on the plot
+            # use hjust and vjust to place the label in the top right corner, where there
+            # is a lot of whitespace 
+            ## adjusting text size to make it slightly smaller
+            annotate("text", x = Inf, y = -Inf, label = eq_label, hjust = 1.1, vjust = -17.5, size = 4, color = "black") +
+            # scale_color_manual() to use my custom color palette above
+            scale_color_manual(values = c(custom_palette[3], custom_palette[1])) +
+            # labs() from Week 2 - Lecture notes
+            # using colnames() to avoid hardcoding the gene name
+            labs(
+              # scatter plot title
+              title = "Scatter Plot", 
+              ## adding subtitle
+              subtitle = paste(primary_gene, "vs.", secondary_gene), 
+              # x axis label 
+              x = primary_gene, 
+              # y axis label
+              y = secondary_gene,
+              # legend label
+              color = "Tissue Type"
+            ) +
+            # theme() from the Week 2 - Lecture notes, text formatting
+            ## adding face = "bold", got this idea from
+            ## watching Jillian Melbourne's check in video
+            theme(
+              # default text size
+              text = element_text(size = 12), 
+              # axis title size
+              axis.title = element_text(size = 10, face = "bold"), 
+              # axis text size
+              ## adjusted axis text size from 10 to 8
+              axis.text = element_text(size = 8), 
+              # legend title size
+              legend.title = element_text(size = 10, face = "bold"), 
+              # legend text size
+              legend.text = element_text(size = 10),
+              ## adding a light gray background to the legend
+              ## groups the title and types nicely, idea from https://r-charts.com/ggplot2/legend/
+              legend.background = element_rect(fill = "#F5F5F5"),
+              # plot title size and centering
+              plot.title = element_text(size = 10, hjust = 0.5, face = "bold"),
+              ## plot subtitle size, centering, and boldface
+              plot.subtitle = element_text(size = 12, hjust = 0.5, face = "bold"),
+              # same as above, the idea is from https://r-charts.com/ggplot2/
+              # a lighter background (compared to the default gray) helps the
+              # colors stand out more
+              panel.background = element_rect(fill = "#F5F5F5")
+            )
+
+scatter
+```
+
+```{r}
+## looking at the plot, it would be interesting to plot the two tissue types separately
+## using the example from https://r-charts.com/ggplot2/facets/, it looks like i can
+## plot the two types seperately, but display them side by side using facet_wrap()
+
+## most of our plot can be resued from above, with a few minor tweaks
+scatter_compare <- ggplot(gene_metadata, aes(x = !!sym(primary_gene), y = !!sym(secondary_gene), color = tissue_type)) +
+            ## here we will need two geom_point() 
+            ## one for the focused group
+            ## the second for a faded gray background of the total points
+            ## first, lets add the faded gray background of the total data
+            ## example is based on  https://r-charts.com/ggplot2/facets/
+            ## tissue_type = NULL is plotting the total points in gray (no grouping)
+            ## this gives a nice comparison for the focused tissue type
+            geom_point(alpha = 0.5, data = transform(gene_metadata, tissue_type = NULL), color = "grey") +
+            ## now, lets add our focused tissue type
+            ## show.legend = FALSE, since it doesnt add any useful information here
+            geom_point(alpha = 0.5, show.legend = FALSE) +
+            ## keeping our same color palette for consistency
+            scale_color_manual(values = c(custom_palette[3], custom_palette[1])) +
+            ## now we use facet_wrap(), this is what will make seperate plots for each of 
+            ## groups / tissue types
+            ## grouped on ~tissue_type, strip.position places the group label on the bottom
+            facet_wrap(~tissue_type, strip.position = "bottom") +
+            ## lets add some labels, keeping consistent with the formatting
+            labs(
+              ## scatter plot title
+              title = "Scatter Plot", 
+              ## adding subtitle
+              subtitle = "Normal vs. Tumor",
+              ## x axis label 
+              x = primary_gene, 
+              ## y axis label
+              y = secondary_gene,
+              ## legend label
+              color = "Tissue Type"
+            ) +
+            ## theme() from the Week 2 - Lecture notes, text formatting
+            theme(
+              ## default text size
+              text = element_text(size = 12), 
+              ## axis title size
+              axis.title = element_text(size = 10, face = "bold"), 
+              ## axis text size
+              axis.text = element_text(size = 8), 
+              ## plot title size and centering
+              plot.title = element_text(size = 10, hjust = 0.5, face = "bold"),
+              ## plot subtitle size, centering, and boldface
+              plot.subtitle = element_text(size = 12, hjust = 0.5, face = "bold"),
+              ## same as above, the idea is from https://r-charts.com/ggplot2/
+              ## a lighter background (compared to the default gray) helps the
+              ## colors stand out more
+              panel.background = element_rect(fill = "#F5F5F5"),
+            )
+
+scatter_compare
+```
+
+c. Create a Violin Plot: Select one covariate from your metadata. Using the count data from the first gene and the selected covariate, generate a violin plot that illustrates the distribution of count data based on the covariate. For example, if you choose “primary_diagnosis”, your plot should display a violin plot for each level in “primary_diagnosis”.
+
+```{r}
+# originally, I wanted to use the ajcc_pathologic_stage column as the covariate
+# but after looking at the data:
+# Stage 0    Stage I   Stage IA   Stage IB   Stage II  Stage IIA  
+# 4         98         93          6          7        374        
+# Stage IIB Stage IIIA Stage IIIB Stage IIIC   Stage IV    Stage X 
+# 267        155         27         62         20          7 
+# some stages have significantly more samples than others, so lets group the stages 
+# into broader categories, such as Early, Intermediate, and Advanced
+
+# i am not sure how i can do this, so lets ask claude
+
+# prompt to Claude Sonnet 4 2025-05-14 (chat.dartmouth.edu): 
+# how can I create a new column that contains more broader categories, such as Early, 
+# Intermediate, and Advanced, for the following stages in the ajcc_pathologic column:
+# Stage 0 Stage I Stage IA Stage IB Stage II Stage IIA 
+# Stage IIB Stage IIIA Stage IIIB Stage IIIC Stage IV Stage X
+
+# response from Claude Sonnet 4 2025-05-14 (chat.dartmouth.edu):
+# df$stage_broad <- "Advanced"  # Set default
+# df$stage_broad[df$ajcc_pathologic %in% c("Stage 0", "Stage I", "Stage IA", "Stage IB")] <- "Early"
+# df$stage_broad[df$ajcc_pathologic %in% c("Stage II", "Stage IIA", "Stage IIB")] <- "Intermediate"
+
+# i dont like the idea of setting the default to advanced, but the rest of the syntax is helpful
+# lets try this with our specific data frames and columns
+gene_metadata$cancer_stage[gene_metadata$ajcc_pathologic_stage %in% c("Stage 0", "Stage I", "Stage IA", "Stage IB")] <- "Early"
+gene_metadata$cancer_stage[gene_metadata$ajcc_pathologic_stage %in% c("Stage II", "Stage IIA", "Stage IIB")] <- "Intermediate"
+gene_metadata$cancer_stage[gene_metadata$ajcc_pathologic_stage %in% c("Stage IIIA", "Stage IIIB", "Stage IIIC", "Stage IV")] <- "Advanced"
+
+# updating this new column to be a factor, so that i can display the levels in order Early -> Advanced 
+gene_metadata$cancer_stage <- factor(gene_metadata$cancer_stage, levels = c("Early", "Intermediate", "Advanced"), ordered = TRUE)
+
+# the violin plot was also displaying the NA data, lets clean the data and remove the NA
+# since displaying the NA data is not useful here
+gene_metadata_clean <- gene_metadata[!is.na(gene_metadata$cancer_stage),]
+
+# lets create our violin plot, using our new cancer_stage column
+violin <- ggplot(gene_metadata_clean, aes(x = cancer_stage, y = !!sym(primary_gene), fill = cancer_stage, color = cancer_stage)) +
+            # the violin plot was looking plain, so i decided to add additional information
+            # the idea and examples to add the quantiles 
+            # was from https://r-charts.com/distribution/violin-plot-group-ggplot2
+            ## removed the quantiles, and replaced it with a bold line for the median
+            geom_violin(alpha = 0.2, color = "black") +
+            ## using ggbeeswarm and geom_quasirandom to add plot points to the violin plot
+            ## cex adjusts the point size, making the points small to avoid be too distracting
+            ## referenced ggbeeswarm documentation for help https://github.com/eclarke/ggbeeswarm
+            geom_quasirandom(alpha = 0.5, cex = 0.3) +
+            ## using stat_summary to add a bold median line
+            ## based on an example from https://r-charts.com/distribution/violin-plot-mean-ggplot2/
+            stat_summary(fun = "mean", geom = "crossbar", width = 0.83, color = "black") +
+            # using scale_y_log10() to reduce the impact of outliers on the visualizations
+            ## after reflecting on feedback from the comments, i do not think scale_y_log10
+            ## is necessary here, if anything it distorts some useful information about the outliers
+            ## scale_y_log10() +
+            # scale_fill_manual() to use my custom color palette above
+            scale_fill_manual(values = custom_palette) +
+            ## scale_color_manual() to color the beeswarm plot points
+            scale_color_manual(values = custom_palette) +
+            # using colnames() to avoid hardcoding the gene name
+            labs(
+              # violin plot title
+              title = "Violin Plot", 
+              ## adding subtitle
+              subtitle = paste("Cancer Stages -", primary_gene), 
+              # x axis label
+              x = "Cancer Stage", 
+              # y axis label
+              y = primary_gene, 
+              # legend label
+              fill = "Cancer Stage", 
+              # legend label
+              color = "Cancer Stage"
+            ) +
+            # theme() from the Week 2 - Lecture notes, text formatting
+            ## adding face = "bold", got this idea from
+            ## watching Jillian Melbourne's check in video
+            theme(
+              # default text size
+              text = element_text(size = 12), 
+              # axis title size
+              axis.title = element_text(size = 10, face = "bold"), 
+              # axis text size
+              ## adjusted axis text size from 10 to 8
+              axis.text = element_text(size = 8), 
+              # another idea from Jillian Melbourne's video, removing the
+              # legend due to redundancy, doesnt add any useful information
+              legend.position = "none",
+              ## adding a light gray background to the legend
+              ## groups the title and types nicely, idea from https://r-charts.com/ggplot2/legend/
+              legend.background = element_rect(fill = "#F5F5F5"),
+              # plot title size and centering
+              plot.title = element_text(size = 10, hjust = 0.5, face = "bold"),
+              ## plot subtitle size, centering, and boldface
+              plot.subtitle = element_text(size = 12, hjust = 0.5, face = "bold"),
+              # same as previous two above, the idea is from https://r-charts.com/ggplot2/
+              # a lighter background (compared to the default gray) helps the
+              # colors stand out more
+              panel.background = element_rect(fill = "#F5F5F5"),
+            ) +
+            ### Jillian brought up a good point in the comments, i should add a legend
+            ### or identifier for the mean line
+            ### lets add it to the right of the lines, since there are all relatively similar height
+            ### i think i can just put it inline and it will be clear
+            ### lets use the scale_x_discrete() we learned during the new bar chart to extend the x axis to make room
+            scale_x_discrete(expand = expansion(mult = c(0.3, 0.45))) +
+            ### now lets add an annotation for the Mean label and position it on the right
+            annotate("text", x = Inf, y = -Inf, label = "Mean", hjust = 1.50, vjust = -6.5, size = 4.5, color = "black", fontface = "bold")
+
+violin
+```
+
+d. Heatmap Analysis:
+    1. Select 10 genes: Choose a set of 10 different genes from the count matrix for your heatmap.
+    2. Generate a Heatmap: Use the ComplexHeatmap package in R to create a heatmap of the count data for the selected genes.
+    3. Add an Annotation Bar: Include an annotation bar reflecting your chosen covariate for further context and interpretation of the data.
+
+```{r}
+## never created a heatmap before, lets pull up the lecture 3 notes for reference
+
+## lets create our annotation for the tissue type
+annotation <- HeatmapAnnotation(
+  ## lets use the tissue type here
+  Tissue_Type = metadata$tissue_type,
+  ## create our legend title
+  ### adjusting the annotation legend to be on the bottom, horizontal to fit match the format the data is presented
+  annotation_legend_param = list(title = "Tissue Type", title_position = "leftcenter", direction = "horizontal", nrow = 1),
+  ## define our color palette for the two types, tissue vs normal
+  col = list(
+    Tissue_Type = c(Normal = custom_palette[3], Tumor = custom_palette[1])
+  ),
+  ## lets put the annotation title on the left side, along with our gene names
+  ### annotation_name_side = "left", 
+  ### since we already have the annotation legend title below, lets remove 
+  ### the annotation name on the left side
+  show_annotation_name = FALSE
+)
+
+## when creating the following heatmap, i referenced the ComplexHeatmap documentation:
+## https://jokergoo.github.io/ComplexHeatmap-reference/book/a-single-heatmap.html
+## now, we can create our heatmap using ComplexHeatmap
+heatmap <- Heatmap(
+  ## use our original gene_data, not the merged genen_metadata
+  gene_data,
+  ## lets add our tissue type annotation
+  bottom_annotation = annotation,
+  ## we want to show the gene names
+  show_row_names = TRUE,
+  ## there are too many sampels to properly display the column names
+  show_column_names = FALSE,
+  ## personally, for my untrained eyes, i dont see any value in the row dendrogram
+  ## just adds unnecessary visual clutter
+  show_row_dend = FALSE,
+  ## similarly, adds unnecessary visual clutter
+  show_column_dend = FALSE,
+  ## cluster the columns to more clearly see the trends or differences in the data
+  cluster_columns = TRUE,
+  ## similarly, cluster the rows to clearly see the differences between genes
+  cluster_rows = TRUE,
+  ## lets use the column title as the title to the plot
+  column_title = "Gene Heatmap",
+  ## lets position the title for the plot at the top
+  column_title_side = "top",
+  ## lets also make the title bold so it stands out
+  column_title_gp = gpar(fontface = "bold"),
+  ## lets provide y axis title for the genes
+  row_title = "Genes",
+  ## lets position the gene names on the left, my preference is to read left to right
+  row_names_side = "left",
+  ## lets also make the row title bold
+  row_title_gp = gpar(fontface = "bold"),
+  ## since this is our count data, lets title our legend accordingly
+  heatmap_legend_param = list(title = "Count"),
+  ## lets use a purple color pallete, making the denser/higher count areas darker
+  col = colorRamp2(c(min(gene_data), 3000, max(gene_data)), c("#e0aaff", "#7b2cbf", "#10002b")),
+  ### based on Audrey's comment and Hunter's video, i really liked the idea of splitting
+  ### the tissue type annotation into clear groups so we can more easily see any differences
+  ### also, i am using factor(levels()) here in order to define the order of the groups
+  ### by default, it had it displaying Tumor on the left and Normal on the right
+  ### so i am reordering here so that it matches the legend, Normal on left, Tumor on right
+  column_split = factor(metadata$tissue_type, levels = c("Tumor", "Normal"), ordered = TRUE)
+)
+
+## per the ComplexHeatmap documentation, we can use draw() and merge_legend = TRUE
+## to stack the legends, instead of having them side by side
+### setting annotation legend to the bottom, so its closer to the actual annotation
+heatmap <- draw(heatmap, annotation_legend_side = "bottom")
+```
+```{r}
+library(forcats) ### to order the columns in descending order
+
+### lets create our bar plot
+### i want to make the bars display horizontally, so i am using the y axis here
+### also, i want to order the stages from most samples to least, so i am using 
+### fct_rev(fct_infreq()) from the forcats library, this was based on an example
+### from https://ggplot2.tidyverse.org/articles/faq-reordering.html
+bar <- ggplot(gene_metadata_clean, aes(y = fct_rev(fct_infreq(ajcc_pathologic_stage)), fill = cancer_stage)) +
+  ### for our bar plots
+  geom_bar(alpha = 0.6) +
+  ### i like the idea of adding the actual values to the end of each bar, to give a
+  ### quantitative perspective, so lets ask claude how we can do that:
+  
+  ### prompt to Claude Sonnet 4 2025-05-14 (chat.dartmouth.edu): 
+  ### in ggplot, when creating a geom_bar() how can I add the values to the end of each bar
+  
+  ### response from Claude Sonnet 4 2025-05-14 (chat.dartmouth.edu):
+  ###    ggplot(df, aes(x = category, y = value)) +
+  ###      geom_bar(stat = "identity", fill = "steelblue") +
+  ###      geom_text(aes(label = value), vjust = -0.5) +
+  ###      scale_y_continuous(expand = expansion(mult = c(0, 0.1)))  # Add 10% space at top
+  
+  ### using hjust = -0.3 to position it right after each bar
+  geom_text(stat = "count", aes(label = after_stat(count)), hjust = -0.3) +
+  ### using scale_x_continuous per above, to extend the x axis to avoid the 
+  ### values being cutoff, using x instead of y because my bars are horizontal
+  scale_x_continuous(expand = expansion(mult = c(0, 0.08))) +
+  ### lets also color each bar by the cancer stages we use in our previous plots
+  scale_fill_manual(values = custom_palette) +
+              labs(
+              # scatter plot title
+              title = "Bar Chart", 
+              ## adding subtitle
+              subtitle = paste("Number of Samples - Pathological Stage"), 
+              # x axis label 
+              x = "Number of Samples", 
+              # y axis label
+              y = "Pathological Stage",
+              # legend label
+              fill = "Cancer Stage"
+            ) +
+            # theme() from the Week 2 - Lecture notes, text formatting
+            ## adding face = "bold", got this idea from
+            ## watching Jillian Melbourne's check in video
+            theme(
+              # default text size
+              text = element_text(size = 12), 
+              # axis title size
+              axis.title = element_text(size = 10, face = "bold"), 
+              # axis text size
+              ## adjusted axis text size from 10 to 8
+              axis.text = element_text(size = 8), 
+              # legend title size
+              legend.title = element_text(size = 10, face = "bold"), 
+              # legend text size
+              legend.text = element_text(size = 10),
+              ## adding a light gray background to the legend
+              ## groups the title and types nicely, idea from https://r-charts.com/ggplot2/legend/
+              legend.background = element_rect(fill = "#F5F5F5"),
+              # plot title size and centering
+              plot.title = element_text(size = 10, hjust = 0.5, face = "bold"),
+              ## plot subtitle size, centering, and boldface
+              plot.subtitle = element_text(size = 12, hjust = 0.5, face = "bold"),
+              # same as above, the idea is from https://r-charts.com/ggplot2/
+              # a lighter background (compared to the default gray) helps the
+              # colors stand out more
+              panel.background = element_rect(fill = "#F5F5F5"),
+              ### finally, lets move the legend inside the plot using legend.position
+              ### https://www.sthda.com/english/wiki/ggplot2-legend-easy-steps-to-change-the-position-and-the-appearance-of-a-graph-legend-in-r-software#google_vignette
+              legend.position = c(0.86, 0.15)
+            )
+
+bar
+```
+
+
+```{r}
+library(gt) # for creating custom tables
+library(tidyverse) # for mapping the plots in the tables
+
+### putting my two functions at the top
+### i got this idea from https://rfortherestofus.com/2023/10/ggplots-in-gt-tables
+### the idea is to create basic violin plots that can be displayed in the
+### distribution column of the table, along with the min, median, mean, max, and sd
+### we will want to create individual plots for each row, so we are creating a
+### function here, for reproducability
+
+### we will have to tables, first lets create the function for the tissue type plots
+### the function argument will be the specific tissue type (normal or tumor)
+tissue_type_table_plot <- function(type) {
+  ### we want to subset the data for the specific tissue type
+  df_specific <- gene_metadata[gene_metadata$tissue_type == type,]
+  ### create and return a basic violin plot
+  ggplot(df_specific, aes(y = tissue_type, x = !!sym(primary_gene), fill = tissue_type)) +
+    ### lets tru to keep the color palette consistent with what we've used previously
+    geom_violin(alpha = 0.3, fill = ifelse(type == "Tumor", custom_palette[1], custom_palette[3])) +
+    ### lets remove the background so it can display cleanly in the table
+    theme_void()
+}
+
+### the second function is for the cancer stages
+### again, we are passing in the specific cancer stage (early, intermediate, advanced)
+cancer_stage_table_plot <- function(stage) {
+  ### lets subset the data for the specific cancer stage
+  df_specific <- gene_metadata_clean[gene_metadata_clean$cancer_stage == stage,]
+  ### create and return a basic violin plot
+  ggplot(df_specific, aes(y = cancer_stage, x = !!sym(primary_gene), fill = cancer_stage)) +
+    ### lets tru to keep the color palette consistent with what we've used previously
+    geom_violin(alpha = 0.3, fill = ifelse(stage == "Early", custom_palette[1], ifelse(stage == "Intermediate", custom_palette[2], custom_palette[3]))) +
+    ### lets remove the background so it can display cleanly in the table
+    theme_void()
+}
+
+### first, lets create the tissue type table
+### we want two rows, normal and tumor, so lets create seperate df for each
+gene_metadata_tumor <- gene_metadata[gene_metadata$tissue_type == "Tumor",]
+gene_metadata_normal <- gene_metadata[gene_metadata$tissue_type == "Normal",]
+
+### now, lets create the df containing the summary statistics
+df_tissue_type <- data.frame(
+  ### main row names
+  Tissue_Type = c("Normal", "Tumor"),
+  ### lets calculate our min values and round to the nearest whole number
+  Min = c(round(min(gene_metadata_normal$CLOCK)), 
+          round(min(gene_metadata_tumor$CLOCK))),
+  ### lets calculate our median values and round to the nearest whole number
+  Median = c(round(median(gene_metadata_normal$CLOCK)), 
+             round(median(gene_metadata_tumor$CLOCK))),
+  ### lets calculate our mean values and round to the nearest whole number
+  Mean = c(round(mean(gene_metadata_normal$CLOCK)), 
+           round(mean(gene_metadata_tumor$CLOCK))),
+  ### lets calculate our max values and round to the nearest whole number
+  Max = c(round(max(gene_metadata_normal$CLOCK)), 
+          round(max(gene_metadata_tumor$CLOCK))),
+  ### lets calculate our standard deviation values and round to the nearest whole number
+  SD = c(round(sd(gene_metadata_normal$CLOCK)), 
+         round(sd(gene_metadata_tumor$CLOCK))),
+  ### finally, lets create the placeholders for our violin plots
+  ### note, these values are what will actually be passed as the argument to the functions
+  ### again, this is based on an example from https://rfortherestofus.com/2023/10/ggplots-in-gt-tables
+  Distribution = c("Normal", "Tumor")
+)
+
+### now, lets create our table
+### use gt() for the table construction and pass in our summary statistics df
+table_tissue_type <- gt(df_tissue_type) |> 
+  ### tab spanner just "groups" the summary statistics and adds a little title
+  tab_spanner(label = md("**Summary Statistics - CLOCK**"), columns = -Tissue_Type) |>
+  ### his is where we create the plots using the functions above, 
+  ### and then map them to the values in our distribution column
+  text_transform(
+    ### specifying the specific column we want the plots to go
+    locations = cells_body(columns = "Distribution"),
+    ### creating a function to call the plot functions and map it to the specifc column/row
+    fn = function(column) {
+      ### call the plots function and pass the specific tissue type
+      map(column, tissue_type_table_plot) |>
+        ### just formatting the size of the image to display in the table
+        ggplot_image(height = px(50), aspect_ratio = 3)
+    }
+  )
+
+### now, lets create our second table for cancer stages
+### here, we want three rows, Early Intermediate and Advanced, so lets create a df for each
+gene_metadata_early <- gene_metadata_clean[gene_metadata_clean$cancer_stage == "Early",]
+gene_metadata_intermediate <- gene_metadata_clean[gene_metadata_clean$cancer_stage == "Intermediate",]
+gene_metadata_advanced <- gene_metadata_clean[gene_metadata_clean$cancer_stage == "Advanced",]
+
+### now, lets create the summary statistics df
+df_cancer_stage <- data.frame(
+  ### create our row names
+  Cancer_Stage = c("Early", "Intermediate", "Advanced"),
+  ### calculate the min for early, intermediate, and advanced stages
+  Min = c(round(min(gene_metadata_early$CLOCK)), 
+          round(min(gene_metadata_intermediate$CLOCK)), 
+          round(min(gene_metadata_advanced$CLOCK))),
+  ### calculate the median for early, intermediate, and advanced stages
+  Median = c(round(median(gene_metadata_early$CLOCK)), 
+             round(median(gene_metadata_intermediate$CLOCK)), 
+             round(median(gene_metadata_advanced$CLOCK))),
+  ### calculate the mean for early, intermediate, and advanced stages
+  Mean = c(round(mean(gene_metadata_early$CLOCK)), 
+           round(mean(gene_metadata_intermediate$CLOCK)), 
+           round(mean(gene_metadata_advanced$CLOCK))),
+  ### calculate the max for early, intermediate, and advanced stages
+  Max = c(round(max(gene_metadata_early$CLOCK)), 
+          round(max(gene_metadata_intermediate$CLOCK)), 
+          round(max(gene_metadata_advanced$CLOCK))),
+  ### calculate the standard deviation for early, intermediate, and advanced stages
+  SD = c(round(sd(gene_metadata_early$CLOCK)), 
+         round(sd(gene_metadata_intermediate$CLOCK)), 
+         round(sd(gene_metadata_advanced$CLOCK))),
+  ### similar to the tissue type df above, lets create the placeholders for the plots
+  Distribution = c("Early", "Intermediate", "Advanced")
+)
+
+### now, lets create our table
+### use gt() for the table construction and pass in our summary statistics df
+table_cancer_stage <- gt(df_cancer_stage) |> 
+  ### tab spanner to group our summary statistics columns and give it a title
+  tab_spanner(label = md("**Summary Statistics - CLOCK**"), columns = -Cancer_Stage) |>
+  ### same idea as above, this is where we will call the function to create our 
+  ### plots, and then map them to each row
+  text_transform(
+    ### define our distribution column
+    locations = cells_body(columns = "Distribution"),
+    fn = function(column) {
+      ### call the function to create our plots, then map them to their corresponding rows
+      map(column, cancer_stage_table_plot) |>
+        ### adjusting the plot/image size
+        ggplot_image(height = px(50), aspect_ratio = 3)
+    }
+  )
+
+table_tissue_type
+table_cancer_stage
+```
+
+## Session Info
+
+```{r}
+# session info
+sessioninfo::session_info()
+```
+
+
