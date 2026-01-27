@@ -1,0 +1,178 @@
+---
+title: "Socioeconomic Disparities in Chronic Disease Prevalence Among U.S. Adults"
+author: "Chayce Reed"
+date: "2026-01-25"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## Load Libraries
+
+```{r load-libraries}
+library(tidyverse)
+library(haven)
+
+file_path <- "/Users/chayce/Documents/Dartmouth College/MS in Health Data Science/01 - Courses/HSE 721 - Data Wrangling/06 - Final Project/Data/"
+```
+
+## Load & Read NHANES Data
+
+```{r load-nhanes}
+demo <- read_xpt(paste0(file_path, "DEMO_J.xpt"))
+bmi <- read_xpt(paste0(file_path, "BMX_J.xpt"))
+```
+
+## Subset Demographic Data
+
+```{r subset-demo}
+demo <- demo[c("SEQN", "RIAGENDR", "RIDAGEYR", "DMDEDUC2", "INDHHIN2", "INDFMPIR")]
+demo <- demo[demo$RIDAGEYR >= 20, ]
+```
+
+## Subset BMI Data
+
+```{r subset-demo}
+bmi <- bmi[c("SEQN", "BMXBMI")]
+```
+
+## Summarize & Glimpse Data
+
+```{r summary-demo}
+cat("------- DEMO DATA -------\n")
+glimpse(demo)
+
+
+cat("\n------- BMI DATA -------\n")
+glimpse(bmi)
+```
+
+## Update Rows to Meaningful Values
+
+```{r}
+cat("------- DEMO DATA -------\n")
+demo$gender <- demo$RIAGENDR
+demo$gender <- factor(
+  case_when(
+    demo$RIAGENDR == 1 ~ "Male",
+    demo$RIAGENDR == 2 ~ "Female",
+    TRUE ~ NA
+  )
+)
+
+demo$age <- demo$RIDAGEYR
+
+demo$education <- demo$DMDEDUC2
+demo$education <- factor(
+  case_when(
+    demo$DMDEDUC2 < 3 ~ "Non-High School Graduate",
+    demo$DMDEDUC2 == 3 ~ "High School Graduate",
+    demo$DMDEDUC2 == 4 ~ "Some College or Higher",
+    demo$DMDEDUC2 == 5 ~ "Some College or Higher",
+    TRUE ~ NA
+  )
+)
+
+demo$income <- demo$INDHHIN2
+demo$income <- factor(
+  case_when(
+    demo$INDHHIN2 == 1 ~ "< $20,000",
+    demo$INDHHIN2 == 2 ~ "< $20,000",
+    demo$INDHHIN2 == 3 ~ "< $20,000",
+    demo$INDHHIN2 == 4 ~ "< $20,000",
+    demo$INDHHIN2 == 13 ~ "< $20,000",
+    demo$INDHHIN2 == 5 ~ "$20,000-$44,999",
+    demo$INDHHIN2 == 6 ~ "$20,000-$44,999",
+    demo$INDHHIN2 == 7 ~ "$20,000-$44,999",
+    demo$INDHHIN2 == 8 ~ "$45,000-$74,999",
+    demo$INDHHIN2 == 9 ~ "$45,000-$74,999",
+    demo$INDHHIN2 == 10 ~ "$45,000-$74,999",
+    demo$INDHHIN2 == 14 ~ "$75,000-$99,999",
+    demo$INDHHIN2 == 15 ~ "> $100,000",
+    TRUE ~ NA
+  )
+)
+
+demo$ratio <- demo$INDFMPIR
+
+demo$ratio_cat <- demo$INDFMPIR
+demo$ratio_cat <- factor(
+  case_when(
+    demo$INDFMPIR < 1.30 ~ "Low income",
+    demo$INDFMPIR < 3.50 ~ "Medium income",
+    demo$INDFMPIR >= 3.50 ~ "High income",
+    TRUE ~ NA
+  )
+)
+
+demo <- demo[c("SEQN", "gender", "age", "education", "income", "ratio", "ratio_cat")]
+glimpse(demo)
+
+
+cat("\n------- BMI DATA -------\n")
+bmi$bmi <- bmi$BMXBMI
+
+bmi$bmi_cat <- bmi$BMXBMI
+bmi$bmi_cat <- factor(
+  case_when(
+    bmi$BMXBMI < 18.5 ~ "Underweight",
+    bmi$BMXBMI < 25 ~ "Healthy Weight",
+    bmi$BMXBMI < 30 ~ "Overweight",
+    bmi$BMXBMI >= 30 ~ "Obesity",
+    TRUE ~ NA
+  )
+)
+
+bmi <- bmi[c("SEQN", "bmi", "bmi_cat")]
+glimpse(bmi)
+```
+
+## Merged Demographic & BMI Data
+
+```{r}
+demo_bmi <- merge(demo, bmi, by = "SEQN")
+head(demo_bmi)
+
+cat("\nMissing Values per Columns:\n")
+colSums(is.na(demo_bmi))
+
+demo_bmi <- demo_bmi[!is.na(demo_bmi$education), ]
+demo_bmi <- demo_bmi[!is.na(demo_bmi$income), ] 
+demo_bmi <- demo_bmi[!is.na(demo_bmi$ratio), ]
+demo_bmi <- demo_bmi[!is.na(demo_bmi$ratio_cat), ]
+
+demo_bmi <- demo_bmi[!is.na(demo_bmi$bmi), ]
+demo_bmi <- demo_bmi[!is.na(demo_bmi$bmi_cat), ]
+
+cat("\n Updated Missing Values per Columns:\n")
+colSums(is.na(demo_bmi))
+```
+
+
+```{r}
+cat("\nObesity Disease Prevalence:\n")
+
+low_income <- sum(demo_bmi$ratio_cat == "Low income" & demo_bmi$bmi_cat == "Obesity", na.rm = TRUE) / sum(demo_bmi$ratio_cat == "Low income", na.rm = TRUE)
+medium_income <- sum(demo_bmi$ratio_cat == "Medium income" & demo_bmi$bmi_cat == "Obesity", na.rm = TRUE) / sum(demo_bmi$ratio_cat == "Medium income", na.rm = TRUE)
+high_income <- sum(demo_bmi$ratio_cat == "High income" & demo_bmi$bmi_cat == "Obesity", na.rm = TRUE) / sum(demo_bmi$ratio_cat == "High income", na.rm = TRUE)
+
+cat(paste("\nLow Income:", low_income))
+cat(paste("\nMedium Income:", medium_income))
+cat(paste("\nHigh Income:", high_income))
+
+no_hs <- sum(demo_bmi$education == "Non-High School Graduate" & demo_bmi$bmi_cat == "Obesity", na.rm = TRUE) / sum(demo_bmi$education == "Non-High School Graduate", na.rm = TRUE)
+hs <- sum(demo_bmi$education == "High School Graduate" & demo_bmi$bmi_cat == "Obesity", na.rm = TRUE) / sum(demo_bmi$education == "High School Graduate", na.rm = TRUE)
+above_hs <- sum(demo_bmi$education == "Some College or Higher" & demo_bmi$bmi_cat == "Obesity", na.rm = TRUE) / sum(demo_bmi$education == "Some College or Higher", na.rm = TRUE)
+
+cat(paste("\n\nNon-High School Graduate:", no_hs))
+cat(paste("\nHigh School Graduate:", hs))
+cat(paste("\nSome College or Higher:", above_hs))
+```
+
+
+
+
+
+
