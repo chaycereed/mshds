@@ -1,5 +1,6 @@
 ---
 title: "Socioeconomic Disparities in Chronic Disease Prevalence Among U.S. Adults"
+subtitle: "How does socioeconomic status relate to the likelihood of having obesity?"
 author: "Chayce Reed"
 date: "2026-01-25"
 output: html_document
@@ -12,58 +13,102 @@ knitr::opts_chunk$set(echo = TRUE)
 ## Load Libraries
 
 ```{r load-libraries}
-library(tidyverse)
-library(haven)
-
-file_path <- "/Users/chayce/Documents/Dartmouth College/MS in Health Data Science/01 - Courses/HSE 721 - Data Wrangling/06 - Final Project/Data/"
+library(tidyverse) # for ggplot, dplyr, etc
+library(haven) # for reading nhanes xpt files
+library(lotr) # for lotr themed color palettes (:
 ```
+
+## Configuration & Setup
+
+```{r}
+# lets declare the filepath to our nhanes data once here
+# use paste0() to avoid the path getting cutoff in knitted pdf
+file_path <- paste0("/Users/chayce/Documents/Dartmouth College",
+                    "/MS in Health Data Science/01 - Courses",
+                    "/HSE 721 - Data Wrangling/06 - Final Project/Data/")
+
+# lets declare the plot aesthetics once here, for consustency
+# and so if we want to change it, we only have to change it once
+color_palette <- "mordor"
+alpha = 0.5
+size = 2
+linetype = 2
+nudge_y = 0.02
+```
+
 
 ## Load & Read NHANES Data
 
 ```{r load-nhanes}
-demo <- read_xpt(paste0(file_path, "DEMO_J.xpt"))
+# nhanes 2017-2018 demographic data
+# specifically looking at the income-to-poverty, income, education fields
+demo <- read_xpt(paste0(file_path, "DEMO_J.xpt")) 
+
+# nhanes 2017-2018 body measures data
+# specifically looking at the body mass index field
 bmi <- read_xpt(paste0(file_path, "BMX_J.xpt"))
 ```
 
 ## Subset Demographic Data
 
 ```{r subset-demo}
+# lets subset the demographic data to only include the fields we are interested in
+# SEQN = unique respondent identifier, RIAGENDR = gender, RIDAGEYR = age,
+# DMDEDUC2 = education level (20+), INDHHIN2 = annual household income
+# INDFMPIR = ratio of family income to poverty
 demo <- demo[c("SEQN", "RIAGENDR", "RIDAGEYR", "DMDEDUC2", "INDHHIN2", "INDFMPIR")]
+
+# subset to only include adults 20+
 demo <- demo[demo$RIDAGEYR >= 20, ]
 ```
 
 ## Subset BMI Data
 
 ```{r subset-demo}
+# lets subset the body measures data to only include the fields we are interested in
+# # SEQN = unique respondent identifier, BMXBMI = body mass index
 bmi <- bmi[c("SEQN", "BMXBMI")]
 ```
 
 ## Summarize & Glimpse Data
 
 ```{r summary-demo}
-cat("------- DEMO DATA -------\n")
-glimpse(demo)
+cat("------- DEMO DATA -------\n") # divider, to clearly differentiate the two df
+# lets check the structure of the data, and see how the values are defined
+glimpse(demo) 
 
 
-cat("\n------- BMI DATA -------\n")
+cat("\n------- BMI DATA -------\n") # divider, to clearly differentiate the two df
+# lets check the structure of the data, and see how the values are defined
 glimpse(bmi)
 ```
 
 ## Update Rows to Meaningful Values
 
-```{r}
-cat("------- DEMO DATA -------\n")
+```{r group-data}
+# here, we are going to create new columns with more readable and usable column
+# names and values (e.g., RIAGENDR -> gender, 1 -> Male)
+
+cat("------- DEMO DATA -------\n") # divider, to clearly differentiate the two df
+# first, lets create a new gender column and update the values from numeric (1, 2)
+# to characters (Male, Female), based on the NHANES DEMO_J.doc
 demo$gender <- demo$RIAGENDR
 demo$gender <- factor(
   case_when(
     demo$RIAGENDR == 1 ~ "Male",
     demo$RIAGENDR == 2 ~ "Female",
     TRUE ~ NA
-  )
+  ), 
+  levels = c("Male", "Female")
 )
 
+# we can keep the values, but lets update the column name
 demo$age <- demo$RIDAGEYR
 
+# next, lets update the education column and values
+# to me, grouping the data into 3 broad categories 
+# (Non-High School Graduate, High School Graduate, and Some College or Higher) 
+#@ makes the most sense
 demo$education <- demo$DMDEDUC2
 demo$education <- factor(
   case_when(
@@ -72,9 +117,13 @@ demo$education <- factor(
     demo$DMDEDUC2 == 4 ~ "Some College or Higher",
     demo$DMDEDUC2 == 5 ~ "Some College or Higher",
     TRUE ~ NA
-  )
+  ),
+  levels = c("Non-High School Graduate", "High School Graduate", "Some College or Higher")
 )
 
+# next, lets group the income column and values
+# group into 5 groups, to give us more granularity than education and income ratio
+# < 20,000, $20,000-$44,999, $45,000-$74,99, $75,000-$99,999, > $100,000
 demo$income <- demo$INDHHIN2
 demo$income <- factor(
   case_when(
@@ -92,28 +141,40 @@ demo$income <- factor(
     demo$INDHHIN2 == 14 ~ "$75,000-$99,999",
     demo$INDHHIN2 == 15 ~ "> $100,000",
     TRUE ~ NA
-  )
+  ),
+  levels = c("< $20,000", "$20,000-$44,999", "$45,000-$74,999", "$75,000-$99,999", "> $100,000")
 )
 
+# we can keep the income ratio values as is, but we will also add a new category
+# column too
 demo$ratio <- demo$INDFMPIR
 
+# now, lets group the income ratios into 3 distinct categories: low income, 
+# medium income, and high income
+# category thresholds were based on: https://stacks.cdc.gov/view/cdc/112811
 demo$ratio_cat <- demo$INDFMPIR
 demo$ratio_cat <- factor(
   case_when(
-    demo$INDFMPIR < 1.30 ~ "Low income",
-    demo$INDFMPIR < 3.50 ~ "Medium income",
-    demo$INDFMPIR >= 3.50 ~ "High income",
+    demo$INDFMPIR < 1.30 ~ "Low Income",
+    demo$INDFMPIR < 3.50 ~ "Medium Income",
+    demo$INDFMPIR >= 3.50 ~ "High Income",
     TRUE ~ NA
-  )
+  ),
+  levels = c("Low Income", "Medium Income", "High Income")
 )
 
+# now lets cleanup the demographics df to only include the new columns
 demo <- demo[c("SEQN", "gender", "age", "education", "income", "ratio", "ratio_cat")]
-glimpse(demo)
+glimpse(demo) # check to make sure it looks ok
 
-
-cat("\n------- BMI DATA -------\n")
+# now lets do the same for the bmi df
+cat("\n------- BMI DATA -------\n") # divider, to clearly differentiate the two df
+# we can keep the bmi values, but rename the column
 bmi$bmi <- bmi$BMXBMI
 
+# now, lets group the bmi into distinct categories: underweight, healthy weight,
+# overweight, obesity. 
+# category threshold were based on: https://www.cdc.gov/bmi/adult-calculator/bmi-categories.html
 bmi$bmi_cat <- bmi$BMXBMI
 bmi$bmi_cat <- factor(
   case_when(
@@ -122,57 +183,273 @@ bmi$bmi_cat <- factor(
     bmi$BMXBMI < 30 ~ "Overweight",
     bmi$BMXBMI >= 30 ~ "Obesity",
     TRUE ~ NA
-  )
+  ),
+  levels = c("Underweight", "Healthy Weight", "Overweight", "Obesity")
 )
 
+# lets cleanup the bmi df to use these new columns
 bmi <- bmi[c("SEQN", "bmi", "bmi_cat")]
-glimpse(bmi)
+glimpse(bmi) # check to make sure it looks ok
 ```
 
 ## Merged Demographic & BMI Data
 
-```{r}
+```{r merged-data}
+# now, we can merge our demo and bmi dfs 
+# we can merge by SEQN, the unique respondent identifier
 demo_bmi <- merge(demo, bmi, by = "SEQN")
-head(demo_bmi)
+head(demo_bmi) # lets check to make sure it worked
 
-cat("\nMissing Values per Columns:\n")
+# lets compare the number of missing vs non-missing values per column
+cat("\nNon-Missing Values per Column:\n")
+colSums(!is.na(demo_bmi))
+cat("\nMissing Values per Column:\n")
 colSums(is.na(demo_bmi))
+cat("\nProportion of Missing Values per Column:\n")
+round(colSums(is.na(demo_bmi)) / colSums(!is.na(demo_bmi)),2)
 
-demo_bmi <- demo_bmi[!is.na(demo_bmi$education), ]
-demo_bmi <- demo_bmi[!is.na(demo_bmi$income), ] 
-demo_bmi <- demo_bmi[!is.na(demo_bmi$ratio), ]
-demo_bmi <- demo_bmi[!is.na(demo_bmi$ratio_cat), ]
+# since less than 15% of the data is missing for the income and ratio_cat 
+# and only 2% of the data is missing for bmi_cat
+# i am comfortable removing these rows from the data
+# still, we will first subset the data into three new df
+# for income ratio vs bmi, income vs bmi, and education vs bmi
+# this is so avoid compounding row removals (for example, we dont care if the 
+# income is missing when comparing bmi across education levels, just like we 
+# dont need the education level values when comparing bmi across income levels)
 
-demo_bmi <- demo_bmi[!is.na(demo_bmi$bmi), ]
-demo_bmi <- demo_bmi[!is.na(demo_bmi$bmi_cat), ]
+# first, lets create our df for income ratio vs bmi
+# we will include age, as a potential confounder 
+ratio_bmi <- demo_bmi[c("age", "ratio_cat", "bmi_cat")]
+ratio_bmi <- ratio_bmi[!is.na(ratio_bmi$ratio_cat), ]
+ratio_bmi <- ratio_bmi[!is.na(ratio_bmi$bmi_cat), ]
 
-cat("\n Updated Missing Values per Columns:\n")
-colSums(is.na(demo_bmi))
+# second, lets create our df for income vs bmi
+# again, include age, as a potential confounder 
+income_bmi <- demo_bmi[c("age", "income", "bmi_cat")]
+income_bmi <- income_bmi[!is.na(income_bmi$income), ]
+income_bmi <- income_bmi[!is.na(income_bmi$bmi_cat), ]
+
+# finally, lets create our df for education vs bmi
+# including age, as a potential confounder 
+education_bmi <- demo_bmi[c("age", "education", "bmi_cat")]
+education_bmi <- education_bmi[!is.na(education_bmi$education), ]
+education_bmi <- education_bmi[!is.na(education_bmi$bmi_cat), ]
+```
+```{r sample-sizes}
+# now, lets determine the sample size for each category, to make sure that all 
+# category have a sufficient sample size to conduct a reasonable analysis
+
+cat("------- Sample Size: Income Ratio -------") # divider, purely aesthetic
+# first, lets view and compare the sample sizes across income ratio categories
+cat(paste("\nLow Income Ratio:", sum(ratio_bmi$ratio_cat == "Low Income", na.rm = TRUE)))
+cat(paste("\nMediun Income Ratio:", sum(ratio_bmi$ratio_cat == "Medium Income", na.rm = TRUE)))
+cat(paste("\nHigh Income Ratio:", sum(ratio_bmi$ratio_cat == "High Income", na.rm = TRUE)))
+
+cat("\n\n------- Sample Size: Income -------") # divider, purely aesthetic
+# next, lets view and compare the sample sizes across income levels
+cat(paste("\n< $20,000:", sum(income_bmi$income == "< $20,000", na.rm = TRUE)))
+cat(paste("\n$20,000-$44,999:", sum(income_bmi$income == "$20,000-$44,999", na.rm = TRUE)))
+cat(paste("\n$45,000-$74,999:", sum(income_bmi$income == "$45,000-$74,999", na.rm = TRUE)))
+cat(paste("\n$75,000-$99,999:", sum(income_bmi$income == "$75,000-$99,999", na.rm = TRUE)))
+cat(paste("\n> $100,000:", sum(income_bmi$income == "> $100,000", na.rm = TRUE)))
+
+cat("\n\n------- Sample Size: Education Level -------") # divider, purely aesthetic
+# finally, lets view and compare the sample sizes across education levels
+cat(paste("\nNon-High School Graduate:", sum(education_bmi$education == "Non-High School Graduate", na.rm = TRUE)))
+cat(paste("\nHigh School Graduate:", sum(education_bmi$education == "High School Graduate", na.rm = TRUE)))
+cat(paste("\nSome College or Higher:", sum(education_bmi$education == "Some College or Higher", na.rm = TRUE)))
 ```
 
+```{r disease-prevalence}
+# next, lets calculate the obesity disease prevalence across levels for each socioeconomic factor
+# this is a key analysis step in our project and will be the main value we use to compare
+# across socioeconomic levels
+# we will calculate the disease prevalence by dividing the number of subjects with obesity 
+# by the total number of subjects, per socioeconomic status (e.g,, low income, 
+# medium income, high income)
+# we will then save these values into a new df, which will be used for our visualizations
 
-```{r}
-cat("\nObesity Disease Prevalence:\n")
+cat("------- Obesity Disease Prevalence: Income Ratio -------") # divider, purely aesthetic
+# first, lets calculate the obesity disease prevalence per income-to-poverty ratio level
+low_income <- round(sum(ratio_bmi$ratio_cat == "Low Income" & ratio_bmi$bmi_cat == "Obesity", na.rm = TRUE) / sum(ratio_bmi$ratio_cat == "Low Income", na.rm = TRUE), 2)
+medium_income <- round(sum(ratio_bmi$ratio_cat == "Medium Income" & ratio_bmi$bmi_cat == "Obesity", na.rm = TRUE) / sum(ratio_bmi$ratio_cat == "Medium Income", na.rm = TRUE), 2)
+high_income <- round(sum(ratio_bmi$ratio_cat == "High Income" & ratio_bmi$bmi_cat == "Obesity", na.rm = TRUE) / sum(ratio_bmi$ratio_cat == "High Income", na.rm = TRUE), 2)
 
-low_income <- sum(demo_bmi$ratio_cat == "Low income" & demo_bmi$bmi_cat == "Obesity", na.rm = TRUE) / sum(demo_bmi$ratio_cat == "Low income", na.rm = TRUE)
-medium_income <- sum(demo_bmi$ratio_cat == "Medium income" & demo_bmi$bmi_cat == "Obesity", na.rm = TRUE) / sum(demo_bmi$ratio_cat == "Medium income", na.rm = TRUE)
-high_income <- sum(demo_bmi$ratio_cat == "High income" & demo_bmi$bmi_cat == "Obesity", na.rm = TRUE) / sum(demo_bmi$ratio_cat == "High income", na.rm = TRUE)
-
+# lets take a quic look at the results
 cat(paste("\nLow Income:", low_income))
 cat(paste("\nMedium Income:", medium_income))
 cat(paste("\nHigh Income:", high_income))
 
-no_hs <- sum(demo_bmi$education == "Non-High School Graduate" & demo_bmi$bmi_cat == "Obesity", na.rm = TRUE) / sum(demo_bmi$education == "Non-High School Graduate", na.rm = TRUE)
-hs <- sum(demo_bmi$education == "High School Graduate" & demo_bmi$bmi_cat == "Obesity", na.rm = TRUE) / sum(demo_bmi$education == "High School Graduate", na.rm = TRUE)
-above_hs <- sum(demo_bmi$education == "Some College or Higher" & demo_bmi$bmi_cat == "Obesity", na.rm = TRUE) / sum(demo_bmi$education == "Some College or Higher", na.rm = TRUE)
+# now lets save it to a new df, so we can use it in our visuals (and maybe tables, tbd)
+# we will also use a factor here, so we can define the order we wish to display the 
+# categories in the plots (low ses to high ses)
+ratio_prevalence <- data.frame(
+  ratio_level = factor(c("Low Income", "Medium Income", "High Income"), levels = c("Low Income", "Medium Income", "High Income")),
+  disease_prevalance = c(low_income, medium_income, high_income)
+)
 
-cat(paste("\n\nNon-High School Graduate:", no_hs))
+cat("\n\n------- Obesity Disease Prevalence: Income -------") # divider, purely aesthetic
+# second, lets calculate the obesity disease prevalence per income level
+under_20_income <- round(sum(income_bmi$income == "< $20,000" & income_bmi$bmi_cat == "Obesity", na.rm = TRUE) / sum(income_bmi$income == "< $20,000", na.rm = TRUE), 2)
+from_20_44_income <- round(sum(income_bmi$income == "$20,000-$44,999" & income_bmi$bmi_cat == "Obesity", na.rm = TRUE) / sum(income_bmi$income == "$20,000-$44,999", na.rm = TRUE), 2)
+from_45_75_income <- round(sum(income_bmi$income == "$45,000-$74,999" & income_bmi$bmi_cat == "Obesity", na.rm = TRUE) / sum(income_bmi$income == "$45,000-$74,999", na.rm = TRUE), 2)
+from_75_99_income <- round(sum(income_bmi$income == "$75,000-$99,999" & income_bmi$bmi_cat == "Obesity", na.rm = TRUE) / sum(income_bmi$income == "$75,000-$99,999", na.rm = TRUE), 2)
+over_100_income <- round(sum(income_bmi$income == "> $100,000" & income_bmi$bmi_cat == "Obesity", na.rm = TRUE) / sum(income_bmi$income == "> $100,000", na.rm = TRUE), 2)
+
+# lets take a quick look at the results
+cat(paste("\n< $20,000:", under_20_income))
+cat(paste("\n$20,000-$44,999:", from_20_44_income))
+cat(paste("\n$45,000-$74,999:", from_45_75_income))
+cat(paste("\n$75,000-$99,999:", from_75_99_income))
+cat(paste("\n> $100,000:", over_100_income))
+
+# now we can save it to a df to use in our visuals
+income_prevalence <- data.frame(
+  income_level = factor(c("< $20,000", "$20,000-$44,999", "$45,000-$74,999", "$75,000-$99,999", "> $100,000"),  levels = c("< $20,000", "$20,000-$44,999", "$45,000-$74,999", "$75,000-$99,999", "> $100,000")),
+  disease_prevalance = c(under_20_income, from_20_44_income, from_45_75_income, from_75_99_income, over_100_income)
+)
+
+cat("\n\n------- Obesity Disease Prevalence: Education -------") # divider, purely aesthetic
+# second, lets calculate the obesity disease prevalence per education level
+no_hs <- round(sum(education_bmi$education == "Non-High School Graduate" & education_bmi$bmi_cat == "Obesity", na.rm = TRUE) / sum(education_bmi$education == "Non-High School Graduate", na.rm = TRUE), 2)
+hs <- round(sum(education_bmi$education == "High School Graduate" & education_bmi$bmi_cat == "Obesity", na.rm = TRUE) / sum(education_bmi$education == "High School Graduate", na.rm = TRUE), 2)
+above_hs <- round(sum(education_bmi$education == "Some College or Higher" & education_bmi$bmi_cat == "Obesity", na.rm = TRUE) / sum(education_bmi$education == "Some College or Higher", na.rm = TRUE), 2)
+
+# lets take a quick look at the results
+cat(paste("\nNon-High School Graduate:", no_hs))
 cat(paste("\nHigh School Graduate:", hs))
 cat(paste("\nSome College or Higher:", above_hs))
+
+# again, we will save it to a new df to use in our plots
+education_prevalence <- data.frame(
+  education_level = factor(c("Non-High School Graduate", "High School Graduate", "Some College or Higher"), levels = c("Non-High School Graduate", "High School Graduate", "Some College or Higher")),
+  disease_prevalance = c(no_hs, hs, above_hs)
+)
 ```
 
+```{r ratio-visualization}
+ggplot(ratio_prevalence, aes(x = ratio_level, y = disease_prevalance, fill = ratio_level, group = 1)) +
+  geom_col(alpha = 0.5) +
+  geom_point(size = 2) +
+  geom_line(linetype = 2) +
+  geom_text(aes(label = disease_prevalance), nudge_y = 0.02) +
+  scale_y_continuous(limits = c(0, 0.5)) +
+  scale_fill_lotr_d("rivendell") +
+  labs(
+    title = "Disease Prevalence by Income Ratio", 
+    x = "Income Ratio", 
+    y = "Disease Prevalence"
+  ) +
+  theme(
+    text = element_text(size = 8), 
+    axis.title = element_text(size = 10, face = "bold"), 
+    axis.text = element_text(size = 8), 
+    plot.title = element_text(size = 12, hjust = 0.5, face = "bold"),
+    panel.background = element_rect(fill = "#F5F5F5"),
+    legend.position = "none"
+  )
+```
 
+```{r education-visualization}
+ggplot(education_prevalence, aes(x = education_level, y = disease_prevalance, fill = education_level, group = 1)) +
+  geom_col(alpha = 0.5) +
+  geom_point(size = 2) +
+  geom_line(linetype = 2) +
+  geom_text(aes(label = disease_prevalance), nudge_y = 0.02) +
+  scale_y_continuous(limits = c(0, 0.5)) +
+  scale_fill_lotr_d("rivendell") +
+  labs(
+    title = "Disease Prevalence by Education Level", 
+    x = "Education Level", 
+    y = "Disease Prevalence"
+  ) +
+  theme(
+    text = element_text(size = 8), 
+    axis.title = element_text(size = 10, face = "bold"), 
+    axis.text = element_text(size = 8), 
+    plot.title = element_text(size = 12, hjust = 0.5, face = "bold"),
+    panel.background = element_rect(fill = "#F5F5F5"),
+    legend.position = "none"
+  )
+```
 
+```{r income-visualization}
+ggplot(income_prevalence, aes(x = income_level, y = disease_prevalance, fill = income_level, group = 1)) +
+  geom_col(alpha = 0.5) +
+  geom_point(size = 2) +
+  geom_line(linetype = 2) +
+  geom_text(aes(label = disease_prevalance), nudge_y = 0.02) +
+  scale_y_continuous(limits = c(0, 0.5)) +
+  scale_fill_lotr_d("rivendell") +
+  labs(
+    title = "Disease Prevalence by Income", 
+    x = "Income", 
+    y = "Disease Prevalence"
+  ) +
+  theme(
+    text = element_text(size = 8), 
+    axis.title = element_text(size = 10, face = "bold"), 
+    axis.text = element_text(size = 8), 
+    plot.title = element_text(size = 12, hjust = 0.5, face = "bold"),
+    panel.background = element_rect(fill = "#F5F5F5"),
+    legend.position = "none"
+  )
+```
 
+```{r ratio-age-distribution}
+ggplot(ratio_bmi, aes(x = ratio_cat, y = age, fill = ratio_cat)) +
+  geom_boxplot(alpha = 0.5) +
+  scale_fill_lotr_d("rivendell") +
+  labs(
+    title = "Age Distribution by Income Ratio", 
+    x = "Income Ratio", 
+    y = "Age"
+  ) +
+  theme(
+    text = element_text(size = 8), 
+    axis.title = element_text(size = 10, face = "bold"), 
+    axis.text = element_text(size = 8), 
+    plot.title = element_text(size = 12, hjust = 0.5, face = "bold"),
+    panel.background = element_rect(fill = "#F5F5F5"),
+    legend.position = "none"
+  )
+```
 
+```{r income-age-distribution}
+ggplot(income_bmi, aes(x = income, y = age, fill = income)) +
+  geom_boxplot(alpha = 0.5) +
+  scale_fill_lotr_d("rivendell") +
+  labs(
+    title = "Age Distribution by Income", 
+    x = "Income", 
+    y = "Age"
+  ) +
+  theme(
+    text = element_text(size = 8), 
+    axis.title = element_text(size = 10, face = "bold"), 
+    axis.text = element_text(size = 8), 
+    plot.title = element_text(size = 12, hjust = 0.5, face = "bold"),
+    panel.background = element_rect(fill = "#F5F5F5"),
+    legend.position = "none"
+  )
+```
+
+```{r education-age-distribution}
+ggplot(education_bmi, aes(x = education, y = age, fill = education)) +
+  geom_boxplot(alpha = 0.5) +
+  scale_fill_lotr_d("rivendell") +
+  labs(
+    title = "Age Distribution by Education", 
+    x = "Education", 
+    y = "Age"
+  ) +
+  theme(
+    text = element_text(size = 8), 
+    axis.title = element_text(size = 10, face = "bold"), 
+    axis.text = element_text(size = 8), 
+    plot.title = element_text(size = 12, hjust = 0.5, face = "bold"),
+    panel.background = element_rect(fill = "#F5F5F5"),
+    legend.position = "none"
+  )
+```
 
