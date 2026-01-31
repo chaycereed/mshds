@@ -16,6 +16,7 @@ knitr::opts_chunk$set(echo = TRUE)
 library(tidyverse) # for ggplot, dplyr, etc
 library(haven) # for reading nhanes xpt files
 library(lotr) # for lotr themed color palettes (:
+library(gt) # for creating summary tables
 ```
 
 ## Configuration & Setup
@@ -29,7 +30,8 @@ file_path <- paste0("/Users/chayce/Documents/Dartmouth College",
 
 # lets declare the plot aesthetics once here, for consustency
 # and so if we want to change it, we only have to change it once
-color_palette <- "mordor"
+prevalence_palette <- "rivendell"
+age_distribution_palette <- "mordor"
 alpha = 0.5
 size = 2
 linetype = 2
@@ -76,7 +78,6 @@ bmi <- bmi[c("SEQN", "BMXBMI")]
 cat("------- DEMO DATA -------\n") # divider, to clearly differentiate the two df
 # lets check the structure of the data, and see how the values are defined
 glimpse(demo) 
-
 
 cat("\n------- BMI DATA -------\n") # divider, to clearly differentiate the two df
 # lets check the structure of the data, and see how the values are defined
@@ -192,6 +193,88 @@ bmi <- bmi[c("SEQN", "bmi", "bmi_cat")]
 glimpse(bmi) # check to make sure it looks ok
 ```
 
+## Create Demographic Summary Tables
+
+```{r}
+# to create tables for our report, lets use the gt library
+# referencing https://r-graph-gallery.com/package/gt.html for help
+# first need to make a data frame containing the info we want to display
+# for the age summary table, lets include mean, standard deviation, min and max
+demo_age_table_df <- data.frame(
+    Metric = c("Min", "Mean", "Max", "SD"),
+    Age = c(as.character(min(demo$age)),
+            as.character(floor(mean(demo$age, rm.na = TRUE))), 
+            as.character(max(demo$age)),
+            as.character(round(sd(demo$age), 1))
+            )
+  )
+
+# now we can use gt() to create a formatted table we can use in our report
+gt(demo_age_table_df, rowname_col = "Metric")
+
+# now lets create a table to display the count and proportions for each gender
+# table() for the counts per gender
+demo_gender_table <- table(demo$gender)
+demo_gender_male_count <- demo_gender_table[1]
+demo_gender_female_count <- demo_gender_table[2]
+
+# prop.table() for the proportions per gender
+demo_gender_prop <- round(prop.table(demo_gender_table), 2)
+demo_gender_male_prop <- demo_gender_prop[1]
+demo_gender_female_prop <- demo_gender_prop[2]
+
+# now lets build the df
+demo_gender_table_df <- data.frame(
+  Gender = c("Male", "Female"),
+  Count = c(demo_gender_male_count, demo_gender_female_count), 
+  Female = c(demo_gender_male_prop, demo_gender_female_prop)
+)
+
+# finally display it using gt()
+gt(demo_gender_table_df, rowname_col = "Gender")
+```
+
+## Create BMI Summary Tables
+
+```{r}
+# now lets create age and bmi category summary tables for the bmi dataset
+bmi_age_table_df <- data.frame(
+    Metric = c("Min", "Mean", "Max", "SD"),
+    Age = c(as.character(min(bmi$age)),
+            as.character(floor(mean(bmi$age, rm.na = TRUE))), 
+            as.character(max(bmi$age)),
+            as.character(round(sd(bmi$age), 1))
+            )
+  )
+
+# create our age summary table for the bmi dataset
+gt(bmi_age_table_df, rowname_col = "Metric")
+
+# now lets determine the counts per bmi category
+bmi_cat_table <- table(bmi$bmi_cat)
+bmi_undeweight_count <- bmi_cat_table[1]
+bmi_healthy_weight_count <- bmi_cat_table[2]
+bmi_over_weight_count <- bmi_cat_table[3]
+bmi_obesity_count <- bmi_cat_table[4]
+
+# then the proportions per bmi category
+bmi_cat_prop <- round(prop.table(bmi_cat_table), 2)
+bmi_undeweight_prop <- bmi_cat_prop[1]
+bmi_health_weight_prop <- bmi_cat_prop[2]
+bmi_over_weight_prop <- bmi_cat_prop[3]
+bmi_obesity_prop <- bmi_cat_prop[4]
+
+# now lets put all the data into a df
+bmi_cat_table_df <- data.frame(
+  BMI = c("Underweight", "Healthy Weight", "Overweight", "Obesity"),
+  Count = c(bmi_undeweight_count, bmi_healthy_weight_count, bmi_over_weight_count, bmi_obesity_count), 
+  Proportion = c(bmi_undeweight_prop, bmi_health_weight_prop, bmi_over_weight_prop, bmi_obesity_prop)
+)
+
+# finally lets display our table
+gt(bmi_cat_table_df, rowname_col = "BMI")
+```
+
 ## Merged Demographic & BMI Data
 
 ```{r merged-data}
@@ -259,6 +342,98 @@ cat(paste("\nNon-High School Graduate:", sum(education_bmi$education == "Non-Hig
 cat(paste("\nHigh School Graduate:", sum(education_bmi$education == "High School Graduate", na.rm = TRUE)))
 cat(paste("\nSome College or Higher:", sum(education_bmi$education == "Some College or Higher", na.rm = TRUE)))
 ```
+
+## Create Socioeconomic Factor Summary Tables
+
+```{r}
+# now, lets create summary tables for each socioeconomic factor
+# starting with education, lets determine the amount of samples per
+# education level
+demo_education_table <- table(education_bmi$education)
+demo_nohs_count <- demo_education_table[1]
+demo_hs_count <- demo_education_table[2]
+demo_scoh_count <- demo_education_table[3]
+
+# now, we can use prop.table() on the original table to calculate the 
+# proportions per education level
+demo_education_prop <- round(prop.table(demo_education_table), 2)
+demo_nohs_prop <- demo_education_prop[1]
+demo_hs_prop <- demo_education_prop[2]
+demo_scoh_prop <- demo_education_prop[3]
+
+# lets put the counts and proportions into a df, along with a vector for our education levels
+demo_education_table_df <- data.frame(
+  Level = c("Non-High School Graduate", "High School Graduate", "Some College or Higher"),
+  Count = c(demo_nohs_count, demo_hs_count, demo_scoh_count),
+  Proportion = c(demo_nohs_prop, demo_hs_prop, demo_scoh_prop)
+)
+
+# finally, lets display our table
+gt(demo_education_table_df, rowname_col = "Level")
+
+# again, lets follow the same logic as above, but now for the income levels
+# first, we determine the counts per income level
+demo_income_table <- table(income_bmi$income)
+demo_under_20_income_count <- demo_income_table[1]
+demo_from_20_44_income_count <- demo_income_table[2]
+demo_from_45_75_income_count <- demo_income_table[3]
+demo_from_75_99_income_count <- demo_income_table[4]
+demo_over_100_income_count <- demo_income_table[5]
+
+# next, we determine the proportion per income level
+demo_income_prop <- prop.table(demo_income_table)
+demo_under_20_income_prop <- round(demo_income_prop[1], 2)
+demo_from_20_44_income_prop <- round(demo_income_prop[2], 2)
+demo_from_45_75_income_prop <- round(demo_income_prop[3], 2)
+demo_from_75_99_income_prop <- round(demo_income_prop[4], 2)
+demo_over_100_income_prop <- round(demo_income_prop[5], 2)
+
+# lets put this data into a data frame
+demo_income_table_df <- data.frame(
+  Level = c("< $20,000", "$20,000-$44,999", "$45,000-$74,999", "$75,000-$99,999", "> $100,000"),
+  Count = c(demo_under_20_income_count, 
+            demo_from_20_44_income_count, 
+            demo_from_45_75_income_count, 
+            demo_from_75_99_income_count, 
+            demo_over_100_income_count),
+  Proportion = c(demo_under_20_income_prop, 
+            demo_from_20_44_income_prop, 
+            demo_from_45_75_income_prop, 
+            demo_from_75_99_income_prop, 
+            demo_over_100_income_prop)
+)
+
+# now we display the table using gt()
+gt(demo_income_table_df, rowname_col = "Level")
+
+# finally, lets do the counts per income-to-poverty ratio levels
+demo_ratio_table <- table(ratio_bmi$ratio)
+demo_low_income_ratio_count <- demo_ratio_table[1]
+demo_medium_income_ratio_count <- demo_ratio_table[2]
+demo_high_income_ratio_count <- demo_ratio_table[3]
+
+# proportions per income-to-poverty ratio levels
+demo_ratio_prop <- prop.table(demo_ratio_table)
+demo_low_income_ratio_prop <- round(demo_ratio_prop[1], 2)
+demo_medium_income_ratio_prop <- round(demo_ratio_prop[2], 2)
+demo_high_income_ratio_prop <- round(demo_ratio_prop[3], 2)
+
+# income-to-poverty ratio levels summary df
+demo_ratio_table_df <- data.frame(
+  Level = c("Low Income", "Medium Income", "High Income"),
+  Count = c(demo_low_income_ratio_count, 
+            demo_medium_income_ratio_count, 
+            demo_high_income_ratio_count),
+  Proportion = c(demo_low_income_ratio_prop, 
+            demo_medium_income_ratio_prop, 
+            demo_high_income_ratio_prop)
+)
+
+# income-to-poverty ratio levels summary table
+gt(demo_ratio_table_df, rowname_col = "Level")
+```
+
+## Calculate Disease Prevalence
 
 ```{r disease-prevalence}
 # next, lets calculate the obesity disease prevalence across levels for each socioeconomic factor
@@ -328,19 +503,25 @@ education_prevalence <- data.frame(
 ```
 
 ```{r ratio-visualization}
-ggplot(ratio_prevalence, aes(x = ratio_level, y = disease_prevalance, fill = ratio_level, group = 1)) +
-  geom_col(alpha = 0.5) +
-  geom_point(size = 2) +
-  geom_line(linetype = 2) +
-  geom_text(aes(label = disease_prevalance), nudge_y = 0.02) +
-  scale_y_continuous(limits = c(0, 0.5)) +
-  scale_fill_lotr_d("rivendell") +
-  labs(
-    title = "Disease Prevalence by Income Ratio", 
+# to visualize the obesity disease prevalence across income-to-poverty ratio levels
+# we will use a bar chart with points + lines to better visualize the trends
+# lets also include text showing the specific disease prevalence values for each level
+# referenced https://r-graph-gallery.com/275-add-text-labels-with-ggplot2.html for 
+# how to add the geom_text values to the plots
+ratio_obesity_disease_prevalence <-
+  ggplot(ratio_prevalence, aes(x = ratio_level, y = disease_prevalance, fill = ratio_level, group = 1)) +
+  geom_col(alpha = alpha) + # for the bar charts
+  geom_point(size = size) + # for the individual points
+  geom_line(linetype = linetype) + # for the trend lines between points
+  geom_text(aes(label = disease_prevalance), nudge_y = nudge_y) + # for the specific values
+  scale_y_continuous(limits = c(0, 0.5)) + # setting y to 0.5 seemed intuitive
+  scale_fill_lotr_d(prevalence_palette) + # lets use my custom polette
+  labs( # the rest is just aesthetics and making the plot more clean + readable
+    title = "Obesity Disease Prevalence by Income Ratio", 
     x = "Income Ratio", 
-    y = "Disease Prevalence"
+    y = "Obesity Disease Prevalence"
   ) +
-  theme(
+  theme( 
     text = element_text(size = 8), 
     axis.title = element_text(size = 10, face = "bold"), 
     axis.text = element_text(size = 8), 
@@ -348,20 +529,27 @@ ggplot(ratio_prevalence, aes(x = ratio_level, y = disease_prevalance, fill = rat
     panel.background = element_rect(fill = "#F5F5F5"),
     legend.position = "none"
   )
+
+ratio_obesity_disease_prevalence
+
+# ggsave("plots/ratio_obesity_disease_prevalence.png", plot = ratio_obesity_disease_prevalence, width = 6, height = 4, units = "in", dpi = 300)
 ```
 
 ```{r education-visualization}
-ggplot(education_prevalence, aes(x = education_level, y = disease_prevalance, fill = education_level, group = 1)) +
-  geom_col(alpha = 0.5) +
-  geom_point(size = 2) +
-  geom_line(linetype = 2) +
-  geom_text(aes(label = disease_prevalance), nudge_y = 0.02) +
-  scale_y_continuous(limits = c(0, 0.5)) +
-  scale_fill_lotr_d("rivendell") +
-  labs(
-    title = "Disease Prevalence by Education Level", 
-    x = "Education Level", 
-    y = "Disease Prevalence"
+# next, we will visualize the obesity disease prevalence across education levels
+# for visual consistency, we will again use a bar chart with points + lines + text values
+education_obesity_disease_prevalence <-
+  ggplot(education_prevalence, aes(x = education_level, y = disease_prevalance, fill = education_level, group = 1)) +
+  geom_col(alpha = alpha) + # the main bar chart
+  geom_point(size = size) + # plot points
+  geom_line(linetype = linetype) + # trend lines between the points
+  geom_text(aes(label = disease_prevalance), nudge_y = nudge_y) + # text displays the prevalence values
+  scale_y_continuous(limits = c(0, 0.5)) + # lets use the same y scale
+  scale_fill_lotr_d(prevalence_palette) + # again, lets use the same color palette
+  labs( # the rest is aesthetics + cleanup
+    title = "Obesity Disease Prevalence by Education Level", 
+    x = "Obesity Education Level", 
+    y = "Obesity Disease Prevalence"
   ) +
   theme(
     text = element_text(size = 8), 
@@ -371,20 +559,27 @@ ggplot(education_prevalence, aes(x = education_level, y = disease_prevalance, fi
     panel.background = element_rect(fill = "#F5F5F5"),
     legend.position = "none"
   )
+
+education_obesity_disease_prevalence
+
+# ggsave("plots/education_obesity_disease_prevalence.png", plot = education_obesity_disease_prevalence, width = 6, height = 4, units = "in", dpi = 300)
 ```
 
 ```{r income-visualization}
-ggplot(income_prevalence, aes(x = income_level, y = disease_prevalance, fill = income_level, group = 1)) +
-  geom_col(alpha = 0.5) +
-  geom_point(size = 2) +
-  geom_line(linetype = 2) +
-  geom_text(aes(label = disease_prevalance), nudge_y = 0.02) +
-  scale_y_continuous(limits = c(0, 0.5)) +
-  scale_fill_lotr_d("rivendell") +
-  labs(
-    title = "Disease Prevalence by Income", 
+# now, we will visualize the obesity disease prevalence across income levels
+# agaiin for consistency, lets use the bar chart with points + lines + prevalence text values
+income_obesity_disease_prevalence <-
+  ggplot(income_prevalence, aes(x = income_level, y = disease_prevalance, fill = income_level, group = 1)) +
+  geom_col(alpha = alpha) + # bar charts
+  geom_point(size = size) + # plot points
+  geom_line(linetype = linetype) + # trend lines
+  geom_text(aes(label = disease_prevalance), nudge_y = nudge_y) + # prevalence values
+  scale_y_continuous(limits = c(0, 0.5)) + # y scale, for consistency
+  scale_fill_lotr_d(prevalence_palette) + # custom palette, for consistency
+  labs( # use the same labels + theme format, for consistency
+    title = "Obesity Disease Prevalence by Income", 
     x = "Income", 
-    y = "Disease Prevalence"
+    y = "Obesity Disease Prevalence"
   ) +
   theme(
     text = element_text(size = 8), 
@@ -394,13 +589,25 @@ ggplot(income_prevalence, aes(x = income_level, y = disease_prevalance, fill = i
     panel.background = element_rect(fill = "#F5F5F5"),
     legend.position = "none"
   )
+
+income_obesity_disease_prevalence
+
+# ggsave("plots/income_obesity_disease_prevalence.png", plot = income_obesity_disease_prevalence, width = 6, height = 4, units = "in", dpi = 300)
 ```
 
 ```{r ratio-age-distribution}
+# i think it is also important to highlight a key confounder that may also
+# be contributing to the disease prevalance, and be correlated with different
+# socioeconomic statuses: age
+# for each of our three socioeconomic factors (income to poverty ratio, education
+# and income), lets visualize how age is distributed across the levels
+
+# to do this, lets use ggplot and create boxplots of the age distribution
+# for each income-to-poverty ratio category
 ggplot(ratio_bmi, aes(x = ratio_cat, y = age, fill = ratio_cat)) +
-  geom_boxplot(alpha = 0.5) +
-  scale_fill_lotr_d("rivendell") +
-  labs(
+  geom_boxplot(alpha = alpha) + # for our boxplot
+  scale_fill_lotr_d(age_distribution_palette) + # for our custom palette
+  labs( # lets give the plot proper labels and themes
     title = "Age Distribution by Income Ratio", 
     x = "Income Ratio", 
     y = "Age"
@@ -416,9 +623,11 @@ ggplot(ratio_bmi, aes(x = ratio_cat, y = age, fill = ratio_cat)) +
 ```
 
 ```{r income-age-distribution}
+# next, lets visualize the distribution of age across income levels
+# again, using a boxplot with similar styling/aesthetics for consistency
 ggplot(income_bmi, aes(x = income, y = age, fill = income)) +
-  geom_boxplot(alpha = 0.5) +
-  scale_fill_lotr_d("rivendell") +
+  geom_boxplot(alpha = alpha) +
+  scale_fill_lotr_d(age_distribution_palette) +
   labs(
     title = "Age Distribution by Income", 
     x = "Income", 
@@ -435,9 +644,10 @@ ggplot(income_bmi, aes(x = income, y = age, fill = income)) +
 ```
 
 ```{r education-age-distribution}
+# finally, lets visualize the age distrubtion across education levels
 ggplot(education_bmi, aes(x = education, y = age, fill = education)) +
-  geom_boxplot(alpha = 0.5) +
-  scale_fill_lotr_d("rivendell") +
+  geom_boxplot(alpha = alpha) +
+  scale_fill_lotr_d(age_distribution_palette) +
   labs(
     title = "Age Distribution by Education", 
     x = "Education", 
