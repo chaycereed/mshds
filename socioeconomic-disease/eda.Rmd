@@ -31,7 +31,7 @@ file_path <- paste0("/Users/chayce/Documents/Dartmouth College",
 # lets declare the plot aesthetics once here, for consustency
 # and so if we want to change it, we only have to change it once
 prevalence_palette <- "rivendell"
-age_distribution_palette <- "mordor"
+age_distribution_palette <- "samwise"
 alpha = 0.5
 size = 2
 linetype = 2
@@ -302,19 +302,19 @@ round(colSums(is.na(demo_bmi)) / colSums(!is.na(demo_bmi)),2)
 
 # first, lets create our df for income ratio vs bmi
 # we will include age, as a potential confounder 
-ratio_bmi <- demo_bmi[c("age", "ratio_cat", "bmi_cat")]
+ratio_bmi <- demo_bmi[c("age", "gender", "ratio_cat", "bmi_cat")]
 ratio_bmi <- ratio_bmi[!is.na(ratio_bmi$ratio_cat), ]
 ratio_bmi <- ratio_bmi[!is.na(ratio_bmi$bmi_cat), ]
 
 # second, lets create our df for income vs bmi
 # again, include age, as a potential confounder 
-income_bmi <- demo_bmi[c("age", "income", "bmi_cat")]
+income_bmi <- demo_bmi[c("age", "gender", "income", "bmi_cat")]
 income_bmi <- income_bmi[!is.na(income_bmi$income), ]
 income_bmi <- income_bmi[!is.na(income_bmi$bmi_cat), ]
 
 # finally, lets create our df for education vs bmi
 # including age, as a potential confounder 
-education_bmi <- demo_bmi[c("age", "education", "bmi_cat")]
+education_bmi <- demo_bmi[c("age", "gender", "education", "bmi_cat")]
 education_bmi <- education_bmi[!is.na(education_bmi$education), ]
 education_bmi <- education_bmi[!is.na(education_bmi$bmi_cat), ]
 ```
@@ -369,7 +369,10 @@ demo_education_table_df <- data.frame(
 )
 
 # finally, lets display our table
-gt(demo_education_table_df, rowname_col = "Level")
+gt(demo_education_table_df, rowname_col = "Level") |>
+    tab_header(
+    title = md("**Income-to-Poverty Ratio**")
+  )
 
 # again, lets follow the same logic as above, but now for the income levels
 # first, we determine the counts per income level
@@ -404,7 +407,10 @@ demo_income_table_df <- data.frame(
 )
 
 # now we display the table using gt()
-gt(demo_income_table_df, rowname_col = "Level")
+gt(demo_income_table_df, rowname_col = "Level") |>
+    tab_header(
+    title = md("**Income Level**")
+  )
 
 # finally, lets do the counts per income-to-poverty ratio levels
 demo_ratio_table <- table(ratio_bmi$ratio)
@@ -430,7 +436,10 @@ demo_ratio_table_df <- data.frame(
 )
 
 # income-to-poverty ratio levels summary table
-gt(demo_ratio_table_df, rowname_col = "Level")
+gt(demo_ratio_table_df, rowname_col = "Level") |>
+    tab_header(
+    title = md("**Education Level**")
+  )
 ```
 
 ## Calculate Disease Prevalence
@@ -446,7 +455,8 @@ gt(demo_ratio_table_df, rowname_col = "Level")
 
 cat("------- Obesity Disease Prevalence: Income Ratio -------") # divider, purely aesthetic
 # first, lets calculate the obesity disease prevalence per income-to-poverty ratio level
-low_income <- round(sum(ratio_bmi$ratio_cat == "Low Income" & ratio_bmi$bmi_cat == "Obesity", na.rm = TRUE) / sum(ratio_bmi$ratio_cat == "Low Income", na.rm = TRUE), 2)
+low_income <- round(sum(ratio_bmi$ratio_cat == "Low Income" & ratio_bmi$bmi_cat == "Obesity", na.rm = TRUE) / 
+                      sum(ratio_bmi$ratio_cat == "Low Income", na.rm = TRUE), 2)
 medium_income <- round(sum(ratio_bmi$ratio_cat == "Medium Income" & ratio_bmi$bmi_cat == "Obesity", na.rm = TRUE) / sum(ratio_bmi$ratio_cat == "Medium Income", na.rm = TRUE), 2)
 high_income <- round(sum(ratio_bmi$ratio_cat == "High Income" & ratio_bmi$bmi_cat == "Obesity", na.rm = TRUE) / sum(ratio_bmi$ratio_cat == "High Income", na.rm = TRUE), 2)
 
@@ -455,12 +465,33 @@ cat(paste("\nLow Income:", low_income))
 cat(paste("\nMedium Income:", medium_income))
 cat(paste("\nHigh Income:", high_income))
 
+
+low_income_male <- round(sum(ratio_bmi$ratio_cat == "Low Income" & ratio_bmi$gender == "Male" & ratio_bmi$bmi_cat == "Obesity", na.rm = TRUE) / sum(ratio_bmi$ratio_cat == "Low Income" & ratio_bmi$gender == "Male", na.rm = TRUE), 2)
+medium_income_male <- round(sum(ratio_bmi$ratio_cat == "Medium Income" & ratio_bmi$gender == "Male" & ratio_bmi$bmi_cat == "Obesity", na.rm = TRUE) / sum(ratio_bmi$ratio_cat == "Medium Income" & ratio_bmi$gender == "Male", na.rm = TRUE), 2)
+high_income_male <- round(sum(ratio_bmi$ratio_cat == "High Income" & ratio_bmi$gender == "Male" & ratio_bmi$bmi_cat == "Obesity", na.rm = TRUE) / sum(ratio_bmi$ratio_cat == "High Income"& ratio_bmi$gender == "Male", na.rm = TRUE), 2)
+
+# lets take a quick look at the results
+cat(paste("\n\nLow Income Male:", low_income_male))
+cat(paste("\nMedium Income Male:", medium_income_male))
+cat(paste("\nHigh Income Male:", high_income_male))
+
+low_income_female <- round(sum(ratio_bmi$ratio_cat == "Low Income" & ratio_bmi$gender == "Female" & ratio_bmi$bmi_cat == "Obesity", na.rm = TRUE) / sum(ratio_bmi$ratio_cat == "Low Income" & ratio_bmi$gender == "Female", na.rm = TRUE), 2)
+medium_income_female <- round(sum(ratio_bmi$ratio_cat == "Medium Income" & ratio_bmi$gender == "Female" & ratio_bmi$bmi_cat == "Obesity", na.rm = TRUE) / sum(ratio_bmi$ratio_cat == "Medium Income" & ratio_bmi$gender == "Female", na.rm = TRUE), 2)
+high_income_female <- round(sum(ratio_bmi$ratio_cat == "High Income" & ratio_bmi$gender == "Female" & ratio_bmi$bmi_cat == "Obesity", na.rm = TRUE) / sum(ratio_bmi$ratio_cat == "High Income"& ratio_bmi$gender == "Female", na.rm = TRUE), 2)
+
+# lets take a quick look at the results
+cat(paste("\n\nLow Income Female:", low_income_female))
+cat(paste("\nMedium Income Female:", medium_income_female))
+cat(paste("\nHigh Income Female:", high_income_female))
+
 # now lets save it to a new df, so we can use it in our visuals (and maybe tables, tbd)
 # we will also use a factor here, so we can define the order we wish to display the 
 # categories in the plots (low ses to high ses)
 ratio_prevalence <- data.frame(
   ratio_level = factor(c("Low Income", "Medium Income", "High Income"), levels = c("Low Income", "Medium Income", "High Income")),
-  disease_prevalance = c(low_income, medium_income, high_income)
+  disease_prevalance = c(low_income, medium_income, high_income),
+  male = c(low_income_male, medium_income_male, high_income_male),
+  female = c(low_income_female, medium_income_female, high_income_female)
 )
 
 cat("\n\n------- Obesity Disease Prevalence: Income -------") # divider, purely aesthetic
@@ -478,10 +509,38 @@ cat(paste("\n$45,000-$74,999:", from_45_75_income))
 cat(paste("\n$75,000-$99,999:", from_75_99_income))
 cat(paste("\n> $100,000:", over_100_income))
 
+under_20_income_male <- round(sum(income_bmi$income == "< $20,000" & income_bmi$gender == "Male" & income_bmi$bmi_cat == "Obesity", na.rm = TRUE) / sum(income_bmi$income == "< $20,000" & income_bmi$gender == "Male", na.rm = TRUE), 2)
+from_20_44_income_male <- round(sum(income_bmi$income == "$20,000-$44,999" & income_bmi$gender == "Male" & income_bmi$bmi_cat == "Obesity", na.rm = TRUE) / sum(income_bmi$income == "$20,000-$44,999" & income_bmi$gender == "Male", na.rm = TRUE), 2)
+from_45_75_income_male <- round(sum(income_bmi$income == "$45,000-$74,999" & income_bmi$gender == "Male" & income_bmi$bmi_cat == "Obesity", na.rm = TRUE) / sum(income_bmi$income == "$45,000-$74,999" & income_bmi$gender == "Male", na.rm = TRUE), 2)
+from_75_99_income_male <- round(sum(income_bmi$income == "$75,000-$99,999" & income_bmi$gender == "Male" & income_bmi$bmi_cat == "Obesity", na.rm = TRUE) / sum(income_bmi$income == "$75,000-$99,999" & income_bmi$gender == "Male", na.rm = TRUE), 2)
+over_100_income_male <- round(sum(income_bmi$income == "> $100,000" & income_bmi$gender == "Male" & income_bmi$bmi_cat == "Obesity", na.rm = TRUE) / sum(income_bmi$income == "> $100,000" & income_bmi$gender == "Male", na.rm = TRUE), 2)
+
+# lets take a quick look at the results
+cat(paste("\n\n< $20,000 Male:", under_20_income_male))
+cat(paste("\n$20,000-$44,999 Male:", from_20_44_income_male))
+cat(paste("\n$45,000-$74,999 Male:", from_45_75_income_male))
+cat(paste("\n$75,000-$99,999 Male:", from_75_99_income_male))
+cat(paste("\n> $100,000 Male:", over_100_income_male))
+
+under_20_income_female <- round(sum(income_bmi$income == "< $20,000" & income_bmi$gender == "Female" & income_bmi$bmi_cat == "Obesity", na.rm = TRUE) / sum(income_bmi$income == "< $20,000" & income_bmi$gender == "Female", na.rm = TRUE), 2)
+from_20_44_income_female <- round(sum(income_bmi$income == "$20,000-$44,999" & income_bmi$gender == "Female" & income_bmi$bmi_cat == "Obesity", na.rm = TRUE) / sum(income_bmi$income == "$20,000-$44,999" & income_bmi$gender == "Female", na.rm = TRUE), 2)
+from_45_75_income_female <- round(sum(income_bmi$income == "$45,000-$74,999" & income_bmi$gender == "Female" & income_bmi$bmi_cat == "Obesity", na.rm = TRUE) / sum(income_bmi$income == "$45,000-$74,999" & income_bmi$gender == "Female", na.rm = TRUE), 2)
+from_75_99_income_female <- round(sum(income_bmi$income == "$75,000-$99,999" & income_bmi$gender == "Female" & income_bmi$bmi_cat == "Obesity", na.rm = TRUE) / sum(income_bmi$income == "$75,000-$99,999" & income_bmi$gender == "Female", na.rm = TRUE), 2)
+over_100_income_female <- round(sum(income_bmi$income == "> $100,000" & income_bmi$gender == "Female" & income_bmi$bmi_cat == "Obesity", na.rm = TRUE) / sum(income_bmi$income == "> $100,000" & income_bmi$gender == "Female", na.rm = TRUE), 2)
+
+# lets take a quick look at the results
+cat(paste("\n\n< $20,000 Female:", under_20_income_female))
+cat(paste("\n$20,000-$44,999 Female:", from_20_44_income_female))
+cat(paste("\n$45,000-$74,999 Female:", from_45_75_income_female))
+cat(paste("\n$75,000-$99,999 Female:", from_75_99_income_female))
+cat(paste("\n> $100,000 Female:", over_100_income_female))
+
 # now we can save it to a df to use in our visuals
 income_prevalence <- data.frame(
   income_level = factor(c("< $20,000", "$20,000-$44,999", "$45,000-$74,999", "$75,000-$99,999", "> $100,000"),  levels = c("< $20,000", "$20,000-$44,999", "$45,000-$74,999", "$75,000-$99,999", "> $100,000")),
-  disease_prevalance = c(under_20_income, from_20_44_income, from_45_75_income, from_75_99_income, over_100_income)
+  disease_prevalance = c(under_20_income, from_20_44_income, from_45_75_income, from_75_99_income, over_100_income),
+  male = c(under_20_income_male, from_20_44_income_male, from_45_75_income_male, from_75_99_income_male, over_100_income_male),
+  female = c(under_20_income_female, from_20_44_income_female, from_45_75_income_female, from_75_99_income_female, over_100_income_female)
 )
 
 cat("\n\n------- Obesity Disease Prevalence: Education -------") # divider, purely aesthetic
@@ -495,10 +554,30 @@ cat(paste("\nNon-High School Graduate:", no_hs))
 cat(paste("\nHigh School Graduate:", hs))
 cat(paste("\nSome College or Higher:", above_hs))
 
+no_hs_male <- round(sum(education_bmi$education == "Non-High School Graduate" & education_bmi$gender == "Male" & education_bmi$bmi_cat == "Obesity", na.rm = TRUE) / sum(education_bmi$education == "Non-High School Graduate" & education_bmi$gender == "Male", na.rm = TRUE), 2)
+hs_male <- round(sum(education_bmi$education == "High School Graduate" & education_bmi$gender == "Male" & education_bmi$bmi_cat == "Obesity", na.rm = TRUE) / sum(education_bmi$education == "High School Graduate" & education_bmi$gender == "Male", na.rm = TRUE), 2)
+above_hs_male <- round(sum(education_bmi$education == "Some College or Higher" & education_bmi$gender == "Male" & education_bmi$bmi_cat == "Obesity", na.rm = TRUE) / sum(education_bmi$education == "Some College or Higher" & education_bmi$gender == "Male", na.rm = TRUE), 2)
+
+# lets take a quick look at the results
+cat(paste("\n\nNon-High School Graduate Male:", no_hs_male))
+cat(paste("\nHigh School Graduate Male:", hs_male))
+cat(paste("\nSome College or Higher Male:", above_hs_male))
+
+no_hs_female <- round(sum(education_bmi$education == "Non-High School Graduate" & education_bmi$gender == "Female" & education_bmi$bmi_cat == "Obesity", na.rm = TRUE) / sum(education_bmi$education == "Non-High School Graduate" & education_bmi$gender == "Female", na.rm = TRUE), 2)
+hs_female <- round(sum(education_bmi$education == "High School Graduate" & education_bmi$gender == "Female" & education_bmi$bmi_cat == "Obesity", na.rm = TRUE) / sum(education_bmi$education == "High School Graduate" & education_bmi$gender == "Female", na.rm = TRUE), 2)
+above_hs_female <- round(sum(education_bmi$education == "Some College or Higher" & education_bmi$gender == "Female" & education_bmi$bmi_cat == "Obesity", na.rm = TRUE) / sum(education_bmi$education == "Some College or Higher" & education_bmi$gender == "Female", na.rm = TRUE), 2)
+
+# lets take a quick look at the results
+cat(paste("\n\nNon-High School Graduate Female:", no_hs_female))
+cat(paste("\nHigh School Graduate Female:", hs_female))
+cat(paste("\nSome College or Higher Female:", above_hs_female))
+
 # again, we will save it to a new df to use in our plots
 education_prevalence <- data.frame(
   education_level = factor(c("Non-High School Graduate", "High School Graduate", "Some College or Higher"), levels = c("Non-High School Graduate", "High School Graduate", "Some College or Higher")),
-  disease_prevalance = c(no_hs, hs, above_hs)
+  disease_prevalance = c(no_hs, hs, above_hs),
+  male = c(no_hs_male, hs_male, above_hs_male),
+  female = c(no_hs_female, hs_female, above_hs_female)
 )
 ```
 
@@ -517,9 +596,9 @@ ratio_obesity_disease_prevalence <-
   scale_y_continuous(limits = c(0, 0.5)) + # setting y to 0.5 seemed intuitive
   scale_fill_lotr_d(prevalence_palette) + # lets use my custom polette
   labs( # the rest is just aesthetics and making the plot more clean + readable
-    title = "Obesity Disease Prevalence by Income Ratio", 
-    x = "Income Ratio", 
-    y = "Obesity Disease Prevalence"
+    title = "Obesity Prevalence by Income-to-Poverty Ratio", 
+    x = "Income-to-Poverty Ratio", 
+    y = "Obesity Prevalence"
   ) +
   theme( 
     text = element_text(size = 8), 
@@ -533,6 +612,58 @@ ratio_obesity_disease_prevalence <-
 ratio_obesity_disease_prevalence
 
 # ggsave("plots/ratio_obesity_disease_prevalence.png", plot = ratio_obesity_disease_prevalence, width = 6, height = 4, units = "in", dpi = 300)
+
+ratio_obesity_disease_prevalence_male <-
+  ggplot(ratio_prevalence, aes(x = ratio_level, y = male, fill = ratio_level, group = 1)) +
+  geom_col(alpha = alpha) + # for the bar charts
+  geom_point(size = size) + # for the individual points
+  geom_line(linetype = linetype) + # for the trend lines between points
+  geom_text(aes(label = male), nudge_y = nudge_y) + # for the specific values
+  scale_y_continuous(limits = c(0, 0.5)) + # setting y to 0.5 seemed intuitive
+  scale_fill_lotr_d(prevalence_palette) + # lets use my custom polette
+  labs( # the rest is just aesthetics and making the plot more clean + readable
+    title = "Obesity Prevalence by Income-to-Poverty Ratio - Male Only", 
+    x = "Income-to-Poverty Ratio", 
+    y = "Obesity Prevalence"
+  ) +
+  theme( 
+    text = element_text(size = 8), 
+    axis.title = element_text(size = 10, face = "bold"), 
+    axis.text = element_text(size = 8), 
+    plot.title = element_text(size = 12, hjust = 0.5, face = "bold"),
+    panel.background = element_rect(fill = "#F5F5F5"),
+    legend.position = "none"
+  )
+
+ratio_obesity_disease_prevalence_male
+
+# ggsave("plots/ratio_obesity_disease_prevalence_male.png", plot = ratio_obesity_disease_prevalence_male, width = 6, height = 4, units = "in", dpi = 300)
+
+ratio_obesity_disease_prevalence_female <-
+  ggplot(ratio_prevalence, aes(x = ratio_level, y = female, fill = ratio_level, group = 1)) +
+  geom_col(alpha = alpha) + # for the bar charts
+  geom_point(size = size) + # for the individual points
+  geom_line(linetype = linetype) + # for the trend lines between points
+  geom_text(aes(label = female), nudge_y = nudge_y) + # for the specific values
+  scale_y_continuous(limits = c(0, 0.51)) + # setting y to 0.5 seemed intuitive
+  scale_fill_lotr_d(prevalence_palette) + # lets use my custom polette
+  labs( # the rest is just aesthetics and making the plot more clean + readable
+    title = "Obesity Prevalence by Income-to-Poverty Ratio - Female Only", 
+    x = "Income-to-Poverty Ratio", 
+    y = "Obesity Prevalence"
+  ) +
+  theme( 
+    text = element_text(size = 8), 
+    axis.title = element_text(size = 10, face = "bold"), 
+    axis.text = element_text(size = 8), 
+    plot.title = element_text(size = 12, hjust = 0.5, face = "bold"),
+    panel.background = element_rect(fill = "#F5F5F5"),
+    legend.position = "none"
+  )
+
+ratio_obesity_disease_prevalence_female
+
+# ggsave("plots/ratio_obesity_disease_prevalence_female.png", plot = ratio_obesity_disease_prevalence_female, width = 6, height = 4, units = "in", dpi = 300)
 ```
 
 ```{r education-visualization}
@@ -547,9 +678,9 @@ education_obesity_disease_prevalence <-
   scale_y_continuous(limits = c(0, 0.5)) + # lets use the same y scale
   scale_fill_lotr_d(prevalence_palette) + # again, lets use the same color palette
   labs( # the rest is aesthetics + cleanup
-    title = "Obesity Disease Prevalence by Education Level", 
+    title = "Obesity Prevalence by Education Level", 
     x = "Obesity Education Level", 
-    y = "Obesity Disease Prevalence"
+    y = "Obesity Prevalence"
   ) +
   theme(
     text = element_text(size = 8), 
@@ -563,6 +694,58 @@ education_obesity_disease_prevalence <-
 education_obesity_disease_prevalence
 
 # ggsave("plots/education_obesity_disease_prevalence.png", plot = education_obesity_disease_prevalence, width = 6, height = 4, units = "in", dpi = 300)
+
+education_obesity_disease_prevalence_male <-
+  ggplot(education_prevalence, aes(x = education_level, y = male, fill = education_level, group = 1)) +
+  geom_col(alpha = alpha) + # the main bar chart
+  geom_point(size = size) + # plot points
+  geom_line(linetype = linetype) + # trend lines between the points
+  geom_text(aes(label = male), nudge_y = nudge_y) + # text displays the prevalence values
+  scale_y_continuous(limits = c(0, 0.5)) + # lets use the same y scale
+  scale_fill_lotr_d(prevalence_palette) + # again, lets use the same color palette
+  labs( # the rest is aesthetics + cleanup
+    title = "Obesity Prevalence by Education Level - Male Only", 
+    x = "Obesity Education Level", 
+    y = "Obesity Prevalence"
+  ) +
+  theme(
+    text = element_text(size = 8), 
+    axis.title = element_text(size = 10, face = "bold"), 
+    axis.text = element_text(size = 8), 
+    plot.title = element_text(size = 12, hjust = 0.5, face = "bold"),
+    panel.background = element_rect(fill = "#F5F5F5"),
+    legend.position = "none"
+  )
+
+education_obesity_disease_prevalence_male
+
+# ggsave("plots/education_obesity_disease_prevalence_male.png", plot = education_obesity_disease_prevalence_male, width = 6, height = 4, units = "in", dpi = 300)
+
+education_obesity_disease_prevalence_female <-
+  ggplot(education_prevalence, aes(x = education_level, y = female, fill = education_level, group = 1)) +
+  geom_col(alpha = alpha) + # the main bar chart
+  geom_point(size = size) + # plot points
+  geom_line(linetype = linetype) + # trend lines between the points
+  geom_text(aes(label = female), nudge_y = nudge_y) + # text displays the prevalence values
+  scale_y_continuous(limits = c(0, 0.5)) + # lets use the same y scale
+  scale_fill_lotr_d(prevalence_palette) + # again, lets use the same color palette
+  labs( # the rest is aesthetics + cleanup
+    title = "Obesity Prevalence by Education Level - Female Only", 
+    x = "Obesity Education Level", 
+    y = "Obesity Prevalence"
+  ) +
+  theme(
+    text = element_text(size = 8), 
+    axis.title = element_text(size = 10, face = "bold"), 
+    axis.text = element_text(size = 8), 
+    plot.title = element_text(size = 12, hjust = 0.5, face = "bold"),
+    panel.background = element_rect(fill = "#F5F5F5"),
+    legend.position = "none"
+  )
+
+education_obesity_disease_prevalence_female
+
+# ggsave("plots/education_obesity_disease_prevalence_female.png", plot = education_obesity_disease_prevalence_female, width = 6, height = 4, units = "in", dpi = 300)
 ```
 
 ```{r income-visualization}
@@ -577,9 +760,9 @@ income_obesity_disease_prevalence <-
   scale_y_continuous(limits = c(0, 0.5)) + # y scale, for consistency
   scale_fill_lotr_d(prevalence_palette) + # custom palette, for consistency
   labs( # use the same labels + theme format, for consistency
-    title = "Obesity Disease Prevalence by Income", 
+    title = "Obesity Prevalence by Income", 
     x = "Income", 
-    y = "Obesity Disease Prevalence"
+    y = "Obesity Prevalence"
   ) +
   theme(
     text = element_text(size = 8), 
@@ -593,6 +776,58 @@ income_obesity_disease_prevalence <-
 income_obesity_disease_prevalence
 
 # ggsave("plots/income_obesity_disease_prevalence.png", plot = income_obesity_disease_prevalence, width = 6, height = 4, units = "in", dpi = 300)
+
+income_obesity_disease_prevalence_male <-
+  ggplot(income_prevalence, aes(x = income_level, y = male, fill = income_level, group = 1)) +
+  geom_col(alpha = alpha) + # bar charts
+  geom_point(size = size) + # plot points
+  geom_line(linetype = linetype) + # trend lines
+  geom_text(aes(label = male), nudge_y = nudge_y) + # prevalence values
+  scale_y_continuous(limits = c(0, 0.5)) + # y scale, for consistency
+  scale_fill_lotr_d(prevalence_palette) + # custom palette, for consistency
+  labs( # use the same labels + theme format, for consistency
+    title = "Obesity Prevalence by Income - Male Only", 
+    x = "Income", 
+    y = "Obesity Prevalence"
+  ) +
+  theme(
+    text = element_text(size = 8), 
+    axis.title = element_text(size = 10, face = "bold"), 
+    axis.text = element_text(size = 8), 
+    plot.title = element_text(size = 12, hjust = 0.5, face = "bold"),
+    panel.background = element_rect(fill = "#F5F5F5"),
+    legend.position = "none"
+  )
+
+income_obesity_disease_prevalence_male
+
+# ggsave("plots/income_obesity_disease_prevalence_male.png", plot = income_obesity_disease_prevalence_male, width = 6, height = 4, units = "in", dpi = 300)
+
+income_obesity_disease_prevalence_female <-
+  ggplot(income_prevalence, aes(x = income_level, y = female, fill = income_level, group = 1)) +
+  geom_col(alpha = alpha) + # bar charts
+  geom_point(size = size) + # plot points
+  geom_line(linetype = linetype) + # trend lines
+  geom_text(aes(label = female), nudge_y = nudge_y) + # prevalence values
+  scale_y_continuous(limits = c(0, 0.5)) + # y scale, for consistency
+  scale_fill_lotr_d(prevalence_palette) + # custom palette, for consistency
+  labs( # use the same labels + theme format, for consistency
+    title = "Obesity Prevalence by Income - Female Only", 
+    x = "Income", 
+    y = "Obesity Prevalence"
+  ) +
+  theme(
+    text = element_text(size = 8), 
+    axis.title = element_text(size = 10, face = "bold"), 
+    axis.text = element_text(size = 8), 
+    plot.title = element_text(size = 12, hjust = 0.5, face = "bold"),
+    panel.background = element_rect(fill = "#F5F5F5"),
+    legend.position = "none"
+  )
+
+income_obesity_disease_prevalence_female
+
+# ggsave("plots/income_obesity_disease_prevalence_female.png", plot = income_obesity_disease_prevalence_female, width = 6, height = 4, units = "in", dpi = 300)
 ```
 
 ```{r ratio-age-distribution}
@@ -604,7 +839,7 @@ income_obesity_disease_prevalence
 
 # to do this, lets use ggplot and create boxplots of the age distribution
 # for each income-to-poverty ratio category
-ggplot(ratio_bmi, aes(x = ratio_cat, y = age, fill = ratio_cat)) +
+ratio_age_distribution <- ggplot(ratio_bmi, aes(x = ratio_cat, y = age, fill = ratio_cat)) +
   geom_boxplot(alpha = alpha) + # for our boxplot
   scale_fill_lotr_d(age_distribution_palette) + # for our custom palette
   labs( # lets give the plot proper labels and themes
@@ -620,12 +855,16 @@ ggplot(ratio_bmi, aes(x = ratio_cat, y = age, fill = ratio_cat)) +
     panel.background = element_rect(fill = "#F5F5F5"),
     legend.position = "none"
   )
+
+ratio_age_distribution
+
+# ggsave("plots/ratio_age_distribution.png", plot = ratio_age_distribution, width = 6, height = 4, units = "in", dpi = 300)
 ```
 
 ```{r income-age-distribution}
 # next, lets visualize the distribution of age across income levels
 # again, using a boxplot with similar styling/aesthetics for consistency
-ggplot(income_bmi, aes(x = income, y = age, fill = income)) +
+income_age_distribution <- ggplot(income_bmi, aes(x = income, y = age, fill = income)) +
   geom_boxplot(alpha = alpha) +
   scale_fill_lotr_d(age_distribution_palette) +
   labs(
@@ -641,11 +880,15 @@ ggplot(income_bmi, aes(x = income, y = age, fill = income)) +
     panel.background = element_rect(fill = "#F5F5F5"),
     legend.position = "none"
   )
+
+income_age_distribution
+
+# ggsave("plots/income_age_distribution.png", plot = income_age_distribution, width = 8, height = 4, units = "in", dpi = 300)
 ```
 
 ```{r education-age-distribution}
 # finally, lets visualize the age distrubtion across education levels
-ggplot(education_bmi, aes(x = education, y = age, fill = education)) +
+education_age_distribution <- ggplot(education_bmi, aes(x = education, y = age, fill = education)) +
   geom_boxplot(alpha = alpha) +
   scale_fill_lotr_d(age_distribution_palette) +
   labs(
@@ -661,5 +904,9 @@ ggplot(education_bmi, aes(x = education, y = age, fill = education)) +
     panel.background = element_rect(fill = "#F5F5F5"),
     legend.position = "none"
   )
+
+education_age_distribution
+
+# ggsave("plots/education_age_distribution.png", plot = education_age_distribution, width = 6, height = 4, units = "in", dpi = 300)
 ```
 
