@@ -1,9 +1,11 @@
 ---
 title: "Socioeconomic Disparities in Chronic Disease Prevalence Among U.S. Adults"
-subtitle: "How does socioeconomic status relate to the likelihood of having obesity?"
 author: "Chayce Reed"
 date: "2026-01-25"
-output: html_document
+output:
+  pdf_document: default
+  html_document: default
+subtitle: How does socioeconomic status relate to the likelihood of having obesity?
 ---
 
 ```{r setup, include=FALSE}
@@ -12,11 +14,11 @@ knitr::opts_chunk$set(echo = TRUE)
 
 ## Load Libraries
 
-```{r load-libraries}
-library(tidyverse) # for ggplot, dplyr, etc
-library(haven) # for reading nhanes xpt files
-library(lotr) # for lotr themed color palettes (:
-library(gt) # for creating summary tables
+```{r}
+library(tidyverse)
+library(haven) 
+library(lotr)
+library(gt)
 ```
 
 ## Configuration & Setup
@@ -41,19 +43,21 @@ nudge_y = 0.02
 
 ## Load & Read NHANES Data
 
-```{r load-nhanes}
+```{r}
 # nhanes 2017-2018 demographic data
+# https://wwwn.cdc.gov/nchs/nhanes/search/datapage.aspx?Component=Demographics&CycleBeginYear=2017
 # specifically looking at the income-to-poverty, income, education fields
 demo <- read_xpt(paste0(file_path, "DEMO_J.xpt")) 
 
 # nhanes 2017-2018 body measures data
+# https://wwwn.cdc.gov/nchs/nhanes/search/datapage.aspx?Component=Examination&CycleBeginYear=2017
 # specifically looking at the body mass index field
 bmi <- read_xpt(paste0(file_path, "BMX_J.xpt"))
 ```
 
 ## Subset Demographic Data
 
-```{r subset-demo}
+```{r}
 # lets subset the demographic data to only include the fields we are interested in
 # SEQN = unique respondent identifier, RIAGENDR = gender, RIDAGEYR = age,
 # DMDEDUC2 = education level (20+), INDHHIN2 = annual household income
@@ -66,7 +70,7 @@ demo <- demo[demo$RIDAGEYR >= 20, ]
 
 ## Subset BMI Data
 
-```{r subset-demo}
+```{r}
 # lets subset the body measures data to only include the fields we are interested in
 # # SEQN = unique respondent identifier, BMXBMI = body mass index
 bmi <- bmi[c("SEQN", "BMXBMI")]
@@ -74,7 +78,7 @@ bmi <- bmi[c("SEQN", "BMXBMI")]
 
 ## Summarize & Glimpse Data
 
-```{r summary-demo}
+```{r}
 cat("------- DEMO DATA -------\n") # divider, to clearly differentiate the two df
 # lets check the structure of the data, and see how the values are defined
 glimpse(demo) 
@@ -86,7 +90,7 @@ glimpse(bmi)
 
 ## Update Rows to Meaningful Values
 
-```{r group-data}
+```{r}
 # here, we are going to create new columns with more readable and usable column
 # names and values (e.g., RIAGENDR -> gender, 1 -> Male)
 
@@ -277,7 +281,7 @@ gt(bmi_cat_table_df, rowname_col = "BMI")
 
 ## Merged Demographic & BMI Data
 
-```{r merged-data}
+```{r}
 # now, we can merge our demo and bmi dfs 
 # we can merge by SEQN, the unique respondent identifier
 demo_bmi <- merge(demo, bmi, by = "SEQN")
@@ -444,7 +448,7 @@ gt(demo_ratio_table_df, rowname_col = "Level") |>
 
 ## Calculate Disease Prevalence
 
-```{r disease-prevalence}
+```{r}
 # next, lets calculate the obesity disease prevalence across levels for each socioeconomic factor
 # this is a key analysis step in our project and will be the main value we use to compare
 # across socioeconomic levels
@@ -453,10 +457,14 @@ gt(demo_ratio_table_df, rowname_col = "Level") |>
 # medium income, high income)
 # we will then save these values into a new df, which will be used for our visualizations
 
+cat("------- Obesity Disease Prevalence: Overall Population -------") # divider, purely aesthetic
+# first, lets calculate the overall obesity disease prevalence for the population as a whole
+round(sum(ratio_bmi$bmi_cat == "Obesity", na.rm = TRUE) / sum(!is.na(ratio_bmi$bmi_cat), na.rm = TRUE), 2)
+
+
 cat("------- Obesity Disease Prevalence: Income Ratio -------") # divider, purely aesthetic
-# first, lets calculate the obesity disease prevalence per income-to-poverty ratio level
-low_income <- round(sum(ratio_bmi$ratio_cat == "Low Income" & ratio_bmi$bmi_cat == "Obesity", na.rm = TRUE) / 
-                      sum(ratio_bmi$ratio_cat == "Low Income", na.rm = TRUE), 2)
+# now, lets calculate the obesity disease prevalence per income-to-poverty ratio level
+low_income <- round(sum(ratio_bmi$ratio_cat == "Low Income" & ratio_bmi$bmi_cat == "Obesity", na.rm = TRUE) / sum(ratio_bmi$ratio_cat == "Low Income", na.rm = TRUE), 2)
 medium_income <- round(sum(ratio_bmi$ratio_cat == "Medium Income" & ratio_bmi$bmi_cat == "Obesity", na.rm = TRUE) / sum(ratio_bmi$ratio_cat == "Medium Income", na.rm = TRUE), 2)
 high_income <- round(sum(ratio_bmi$ratio_cat == "High Income" & ratio_bmi$bmi_cat == "Obesity", na.rm = TRUE) / sum(ratio_bmi$ratio_cat == "High Income", na.rm = TRUE), 2)
 
@@ -581,7 +589,9 @@ education_prevalence <- data.frame(
 )
 ```
 
-```{r ratio-visualization}
+## Visualzation: Disease Prevalence by Income-to-Poverty Ratio
+
+```{r}
 # to visualize the obesity disease prevalence across income-to-poverty ratio levels
 # we will use a bar chart with points + lines to better visualize the trends
 # lets also include text showing the specific disease prevalence values for each level
@@ -666,7 +676,9 @@ ratio_obesity_disease_prevalence_female
 # ggsave("plots/ratio_obesity_disease_prevalence_female.png", plot = ratio_obesity_disease_prevalence_female, width = 6, height = 4, units = "in", dpi = 300)
 ```
 
-```{r education-visualization}
+## Visualzation: Disease Prevalence by Education Level
+
+```{r}
 # next, we will visualize the obesity disease prevalence across education levels
 # for visual consistency, we will again use a bar chart with points + lines + text values
 education_obesity_disease_prevalence <-
@@ -679,7 +691,7 @@ education_obesity_disease_prevalence <-
   scale_fill_lotr_d(prevalence_palette) + # again, lets use the same color palette
   labs( # the rest is aesthetics + cleanup
     title = "Obesity Prevalence by Education Level", 
-    x = "Obesity Education Level", 
+    x = "Education Level", 
     y = "Obesity Prevalence"
   ) +
   theme(
@@ -705,7 +717,7 @@ education_obesity_disease_prevalence_male <-
   scale_fill_lotr_d(prevalence_palette) + # again, lets use the same color palette
   labs( # the rest is aesthetics + cleanup
     title = "Obesity Prevalence by Education Level - Male Only", 
-    x = "Obesity Education Level", 
+    x = "Education Level", 
     y = "Obesity Prevalence"
   ) +
   theme(
@@ -731,7 +743,7 @@ education_obesity_disease_prevalence_female <-
   scale_fill_lotr_d(prevalence_palette) + # again, lets use the same color palette
   labs( # the rest is aesthetics + cleanup
     title = "Obesity Prevalence by Education Level - Female Only", 
-    x = "Obesity Education Level", 
+    x = "Education Level", 
     y = "Obesity Prevalence"
   ) +
   theme(
@@ -748,7 +760,9 @@ education_obesity_disease_prevalence_female
 # ggsave("plots/education_obesity_disease_prevalence_female.png", plot = education_obesity_disease_prevalence_female, width = 6, height = 4, units = "in", dpi = 300)
 ```
 
-```{r income-visualization}
+## Visualzation: Disease Prevalence by Income Level
+
+```{r}
 # now, we will visualize the obesity disease prevalence across income levels
 # agaiin for consistency, lets use the bar chart with points + lines + prevalence text values
 income_obesity_disease_prevalence <-
@@ -829,8 +843,9 @@ income_obesity_disease_prevalence_female
 
 # ggsave("plots/income_obesity_disease_prevalence_female.png", plot = income_obesity_disease_prevalence_female, width = 6, height = 4, units = "in", dpi = 300)
 ```
+## Visualzation: Age Distribution by Income-to-Povert Ratio
 
-```{r ratio-age-distribution}
+```{r}
 # i think it is also important to highlight a key confounder that may also
 # be contributing to the disease prevalance, and be correlated with different
 # socioeconomic statuses: age
@@ -861,7 +876,9 @@ ratio_age_distribution
 # ggsave("plots/ratio_age_distribution.png", plot = ratio_age_distribution, width = 6, height = 4, units = "in", dpi = 300)
 ```
 
-```{r income-age-distribution}
+## Visualzation: Age Distribution by Income Level
+
+```{r}
 # next, lets visualize the distribution of age across income levels
 # again, using a boxplot with similar styling/aesthetics for consistency
 income_age_distribution <- ggplot(income_bmi, aes(x = income, y = age, fill = income)) +
@@ -886,7 +903,9 @@ income_age_distribution
 # ggsave("plots/income_age_distribution.png", plot = income_age_distribution, width = 8, height = 4, units = "in", dpi = 300)
 ```
 
-```{r education-age-distribution}
+## Visualzation: Age Distribution by Education Level
+
+```{r}
 # finally, lets visualize the age distrubtion across education levels
 education_age_distribution <- ggplot(education_bmi, aes(x = education, y = age, fill = education)) +
   geom_boxplot(alpha = alpha) +
