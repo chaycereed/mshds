@@ -1,0 +1,192 @@
+---
+title: 'ACS: Exploratory Data Analysis'
+author: "Chayce Reed"
+date: "2026-02-22"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r}
+library(tidyverse)
+library(haven)
+```
+
+```{r}
+filepath <- paste0(getwd(), "/data/")
+```
+
+# ACS
+
+```{r}
+# "HINS1","HINS2","HINS3","HINS4","HINS5","HINS6","HINS7",
+cols <- c("STATE", "AGEP", "POVPIP", "PRIVCOV", "PUBCOV", "HICOV", "PWGTP")
+
+acs_data_a <- read_csv(file.path(filepath, "/csv_pus/psam_pusa.csv"), col_select = all_of(cols), show_col_types = FALSE) |> mutate(STATE = as.character(STATE))
+acs_data_b <- read_csv(file.path(filepath, "/csv_pus/psam_pusb.csv"), col_select = all_of(cols), show_col_types = FALSE) |> mutate(STATE = as.character(STATE))
+
+acs <- bind_rows(acs_data_a, acs_data_b)
+glimpse(acs)
+```
+
+```{r}
+colSums(is.na(acs))
+```
+
+```{r}
+acs <- acs |>
+  mutate(
+    # recodes are 1/2; convert to 1/0
+    insured  = ifelse(HICOV == 1, 1, 0),
+    uninsured = ifelse(HICOV == 2, 1, 0),
+    privcov = ifelse(PRIVCOV == 1, 1, 0),
+    pubcov  = ifelse(PUBCOV == 1, 1, 0)
+  ) |>
+  filter(AGEP >= 18, AGEP <= 64, !is.na(POVPIP), !is.na(PWGTP))
+
+acs <- acs |>
+  filter(!is.na(POVPIP))
+
+nrow(acs[acs$privcov == 0 & acs$pubcov == 0, ])
+nrow(acs[acs$insured == 1,])
+```
+
+```{r}
+non_expansion <- c(1, 12, 13, 20, 28, 45, 47, 48, 55, 56)
+
+acs <- acs |>
+  mutate(expansion = ifelse(STATE %in% non_expansion, 0, 1))
+```
+
+```{r}
+cutoff <- 138
+bandwidth <- 5
+
+acs_local <- acs |>
+  filter(POVPIP >= cutoff - bandwidth,
+         POVPIP <= cutoff + bandwidth)
+```
+
+```{r}
+acs_local |>
+  mutate(side = ifelse(POVPIP < cutoff, "Below", "Above")) |>
+  group_by(expansion, side) |>
+  summarise(
+    mean_uninsured = weighted.mean(uninsured, PWGTP),
+    n = n(),
+    .groups = "drop"
+  )
+```
+
+```{r}
+library(scales)
+
+cutoff <- 138
+bandwidth <- 1
+
+plot_df <- acs |>
+  filter(POVPIP >= cutoff - bandwidth, POVPIP <= cutoff + bandwidth) |>
+  mutate(side = ifelse(POVPIP < cutoff, "Below", "Above")) |>
+  group_by(expansion, side) |>
+  summarise(mean_uninsured = weighted.mean(uninsured, PWGTP),
+            n = n(),
+            .groups = "drop") |>
+  mutate(
+    expansion = factor(expansion, levels = c(0,1),
+                       labels = c("Non-expansion", "Expansion")),
+    side = factor(side, levels = c("Below","Above"))
+  )
+
+ggplot(plot_df, aes(x = side, y = mean_uninsured, group = expansion)) +
+  geom_line() +
+  geom_point(size = 3) +
+  facet_wrap(~ expansion) +
+  scale_y_continuous(labels = percent_format(accuracy = 1)) +
+  labs(
+    title = "Weighted Uninsured Rate Just Below vs Above 138% FPL",
+    x = paste0("Within ±", bandwidth, "% FPL window around 138%"),
+    y = "Uninsured rate"
+  ) +
+  theme_minimal()
+```
+
+```{r}
+bin_width <- 2  # %FPL per bin
+
+binned <- acs |>
+  filter(POVPIP >= cutoff - bandwidth, POVPIP <= cutoff + bandwidth) |>
+  mutate(
+    bin = floor(POVPIP / bin_width) * bin_width + bin_width/2,
+    side = ifelse(POVPIP < cutoff, "Below", "Above"),
+    expansion = factor(expansion, levels = c(0,1), labels = c("Non-expansion", "Expansion"))
+  ) |>
+  group_by(expansion, bin) |>
+  summarise(
+    mean_uninsured = weighted.mean(uninsured, PWGTP),
+    .groups = "drop"
+  )
+
+ggplot(binned, aes(x = bin, y = mean_uninsured)) +
+  geom_point() +
+  geom_vline(xintercept = cutoff, linetype = "dashed") +
+  geom_smooth(
+    data = subset(binned, bin < cutoff),
+    method = "lm", se = FALSE
+  ) +
+  geom_smooth(
+    data = subset(binned, bin >= cutoff),
+    method = "lm", se = FALSE
+  ) +
+  facet_wrap(~ expansion) +
+  scale_y_continuous(labels = percent_format(accuracy = 1)) +
+  labs(
+    title = "RDD-Style Binned Uninsured Rates Around 138% FPL",
+    x = "POVPIP (% of Federal Poverty Level)",
+    y = "Binned uninsured rate"
+  ) +
+  theme_minimal()
+```
+
+```{r}
+plot_df <- acs |>
+  group_by(expansion, POVPIP) |>
+  summarise(
+    insured_rate = weighted.mean(insured, PWGTP),
+    .groups = "drop"
+  ) |>
+  mutate(
+    expansion = factor(expansion,
+                       levels = c(0,1),
+                       labels = c("Non-expansion", "Expansion"))
+  )
+
+ggplot(plot_df, aes(x = POVPIP, y = insured_rate, color = expansion)) +
+  geom_smooth(se = FALSE, method = "loess", span = 0.2) +
+  scale_y_continuous(labels = percent_format(accuracy = 1)) +
+  geom_vline(xintercept = cutoff, linetype = "dashed") +
+  geom_vline(xintercept = 100, linetype = "dashed") +
+  labs(
+    title = "Insurance Coverage Across Poverty Levels",
+    x = "Percent of Federal Poverty Level (POVPIP)",
+    y = "Insured Rate",
+    color = "State Type"
+  ) +
+  theme_minimal()
+```
+
+```{r}
+ggplot(plot_df, aes(x = POVPIP, y = insured_rate, color = expansion)) +
+  geom_smooth(se = FALSE, method = "loess", span = 0.2) +
+  scale_y_continuous(labels = percent_format(accuracy = 1)) +
+  coord_cartesian(xlim = c(50, 250)) +
+  labs(
+    title = "Insurance Coverage Across Poverty Levels",
+    x = "Percent of Federal Poverty Level (POVPIP)",
+    y = "Insured Rate",
+    color = "State Type"
+  ) +
+  theme_minimal() +
+  facet_wrap(~expansion, ncol = 1)
+```
