@@ -1,0 +1,37 @@
+---
+title: "MEPS: Exploratory Data Analysis"
+author: "Chayce Reed"
+date: "2026-02-21"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r}
+library(tidyverse)
+library(haven)
+```
+
+```{r}
+filepath <- paste0(getwd(), "/data/")
+```
+
+# MEPS
+
+```{r}
+meps_data <- read_dta(file.path(filepath, "meps_h251.dta"))
+```
+
+```{r}
+meps_key_variables <- c("POVLEV23", "INSURC23", "TOTSLF23", "PERWT23F")
+```
+
+```{r}
+meps <- meps_data[, meps_key_variables]
+```
+
+```{r}
+glimpse(meps)
+```
