@@ -1,3 +1,13 @@
 .DS_Store
 rna-seq/data/counts.csv
 rna-seq/data/meta_data.csv
+.Rproj.user
+medicaid-dashboard/data/avg_df.rds
+.gitignore
+medicaid-dashboard/data/map_sf.rds
+.gitignore
+medicaid-dashboard/rsconnect/documents/medicaid_dashboard.R/shinyapps.io/chaycereed/medicaid-map.dcf
+medicaid-dashboard/rsconnect/documents/medicaid_dashboard.R/shinyapps.io/chaycereed/medicaid-expansion.dcf
+medicaid-dashboard/data/map_summary.rds
+medicaid-dashboard/data/fpl_coverage_df.rds
+medicaid-dashboard/medicaid-dashboard.Rproj
