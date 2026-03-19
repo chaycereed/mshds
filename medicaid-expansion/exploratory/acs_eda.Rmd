@@ -1,0 +1,523 @@
+---
+title: 'ACS: Exploratory Data Analysis'
+author: "Chayce Reed"
+date: "2026-02-22"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r}
+library(tidyverse)
+library(haven)
+library(systemfonts)
+library(showtext)
+library(grid)
+library(personograph)
+library(sf)
+library(usmap)
+library(gt)
+library(scales)
+```
+
+# Theme
+
+```{r}
+medicaid_colors <- list(
+  expansion = "#0342A1",
+  expansion_cont = c("#0B81D2", "#0053B1", "#0342A1", "#002880", "#011B5B"),
+  
+  nonexpansion = "#C6010B",
+  nonexpansion_cont = c("#FD2640", "#E80016",  "#C6010B", "#A00002", "#6D0100"),
+  
+  insurance_coverage = "#008795",
+  insurance_coverage_cont = c("#00B5C8", "#00A7B7", "#008795", "#007181", "#005866"),
+  
+  financial_burden = "#7A04FD",
+  financial_burden_cont = c("#8F00FF", "#8501FD", "#7A04FD", "#6E01FE", "#6700FD"),
+  
+  expansion_state = c("#0342A1","#C6010B"),
+  outcomes = c("#008795","#7A04FD")
+)
+```
+
+```{r}
+medicaid_palette <- function(palette = "categorical", n = NULL, reverse = FALSE) {
+  pal <- medicaid_colors[[palette]]
+  if (reverse) pal <- rev(pal)
+  if (!is.null(n)) {
+    if (n <= length(pal)) {
+      pal <- pal[1:n]
+    }
+    else {
+      pal <- colorRampPalette(pal)(n)
+    }
+  }
+  return(pal)
+}
+```
+
+```{r}
+scale_color_medicaid <- function(palette = "categorical", reverse = FALSE, ...) {
+    pal <- medicaid_palette(palette = palette, reverse = reverse)
+    ggplot2::discrete_scale(
+      "colour",
+      paste0("medicaid_", palette),
+      palette = function(n) pal[1:n],
+      ...
+  )
+}
+
+scale_fill_medicaid <- function(palette = "categorical", reverse = FALSE, ...) {
+  pal <- medicaid_palette(palette = palette, reverse = reverse)
+  ggplot2::discrete_scale(
+    "fill",
+    paste0("medicaid_", palette),
+    palette = function(n) pal[1:n],
+    ...
+  )
+}
+```
+
+```{r}
+scale_color_medicaid_c <- function(palette = "expansion", reverse = FALSE, ...) {
+  pal <- medicaid_palette(palette = palette, reverse = reverse)
+  ggplot2::scale_color_gradientn(colors = pal, ...)
+}
+
+scale_fill_medicaid_c <- function(palette = "expansion", reverse = FALSE, ...) {
+  pal <- medicaid_palette(palette = palette, reverse = reverse)
+  ggplot2::scale_fill_gradientn(colors = pal, ...)
+}
+```
+
+```{r}
+scale_linetype_medicaid <- function(...) {
+  scale_linetype_manual(
+    values = c("Observed" = "solid",
+               "Counterfactual" = "dashed"),
+    ...
+  )
+}
+```
+
+```{r}
+font_add_google("Instrument Serif", "instrument-serif")
+font_add_google("Instrument Sans", "instrument-sans")
+font_add_google("IBM Plex Mono", "ibm-plex-mono")
+showtext_auto()
+```
+
+```{r}
+font_title <- "instrument-serif"
+font_body <- "instrument-sans"
+font_data <- "ibm-plex-mono"
+```
+
+```{r}
+theme_medicaid <- function() {
+  theme_minimal() +
+    theme(
+      # plot.background = element_rect(fill = "black", color = NA),
+      # panel.background = element_rect(fill = "black", color = NA),
+      # panel.grid.major = element_line(color = "#222222"),
+      # panel.grid.minor = element_line(color = "#111111"),
+      plot.title = element_text(color = "black", family = font_title, size = 20, face = "bold.italic"),
+      plot.subtitle = element_text(color = "black", family = font_title, size = 14, face = "italic"),
+      axis.title = element_text(color = "black", family = font_body, size = 10),
+      axis.text = element_text(color = "black", family = font_data, size = 8),
+      legend.title = element_text(color = "black", family = font_body, size = 10, face = "bold"),
+      legend.text = element_text(color = "black", family = font_data, size = 8),
+    )
+}
+```
+
+# ACS
+
+```{r}
+filepath <- paste0(getwd(), "/data/")
+```
+
+```{r}
+# "HINS1","HINS2","HINS3","HINS4","HINS5","HINS6","HINS7",
+cols <- c("STATE", "AGEP", "POVPIP", "PRIVCOV", "PUBCOV", "HICOV", "PWGTP")
+
+acs_data_a <- read_csv(file.path(filepath, "/csv_pus_2023/psam_pusa.csv"), col_select = all_of(cols), show_col_types = FALSE) |> mutate(STATE = as.character(STATE))
+acs_data_b <- read_csv(file.path(filepath, "/csv_pus_2023/psam_pusb.csv"), col_select = all_of(cols), show_col_types = FALSE) |> mutate(STATE = as.character(STATE))
+
+acs <- bind_rows(acs_data_a, acs_data_b)
+glimpse(acs)
+```
+
+```{r}
+state_lookup <- c(
+  "01" = "Alabama",
+  "02" = "Alaska",
+  "04" = "Arizona",
+  "05" = "Arkansas",
+  "06" = "California",
+  "08" = "Colorado",
+  "09" = "Connecticut",
+  "10" = "Delaware",
+  "11" = "District of Columbia",
+  "12" = "Florida",
+  "13" = "Georgia",
+  "15" = "Hawaii",
+  "16" = "Idaho",
+  "17" = "Illinois",
+  "18" = "Indiana",
+  "19" = "Iowa",
+  "20" = "Kansas",
+  "21" = "Kentucky",
+  "22" = "Louisiana",
+  "23" = "Maine",
+  "24" = "Maryland",
+  "25" = "Massachusetts",
+  "26" = "Michigan",
+  "27" = "Minnesota",
+  "28" = "Mississippi",
+  "29" = "Missouri",
+  "30" = "Montana",
+  "31" = "Nebraska",
+  "32" = "Nevada",
+  "33" = "New Hampshire",
+  "34" = "New Jersey",
+  "35" = "New Mexico",
+  "36" = "New York",
+  "37" = "North Carolina",
+  "38" = "North Dakota",
+  "39" = "Ohio",
+  "40" = "Oklahoma",
+  "41" = "Oregon",
+  "42" = "Pennsylvania",
+  "44" = "Rhode Island",
+  "45" = "South Carolina",
+  "46" = "South Dakota",
+  "47" = "Tennessee",
+  "48" = "Texas",
+  "49" = "Utah",
+  "50" = "Vermont",
+  "51" = "Virginia",
+  "53" = "Washington",
+  "54" = "West Virginia",
+  "55" = "Wisconsin",
+  "56" = "Wyoming",
+  "72" = "Puerto Rico"
+)
+
+non_expansion <- c(
+  "Alabama",
+  "Florida",
+  "Georgia",
+  "Kansas",
+  "Mississippi",
+  "South Carolina",
+  "Tennessee",
+  "Texas",
+  "Wisconsin",
+  "Wyoming"
+)
+
+acs$state_name <- state_lookup[acs$STATE]
+```
+
+
+```{r}
+colSums(is.na(acs))
+unique(acs$STATE)
+```
+
+```{r}
+acs <- acs |>
+  mutate(
+    insured  = ifelse(HICOV == 1, 1, 0),
+    uninsured = ifelse(HICOV == 2, 1, 0),
+    privcov = ifelse(PRIVCOV == 1, 1, 0),
+    pubcov  = ifelse(PUBCOV == 1, 1, 0)
+  ) |>
+  filter(AGEP >= 18, AGEP <= 64, !is.na(POVPIP), !is.na(PWGTP), state_name != "Puerto Rico", state_name != "District of Columbia")
+
+acs <- acs |>
+  filter(!is.na(POVPIP))
+
+nrow(acs[acs$privcov == 0 & acs$pubcov == 0, ])
+nrow(acs[acs$insured == 0,]) / nrow(acs[acs$insured == 0 | acs$insured == 1,])
+```
+
+```{r}
+acs <- acs |>
+  mutate(
+    expansion = ifelse(state_name %in% non_expansion, 0, 1),
+    expansion_name = ifelse(state_name %in% non_expansion, "Non-Expansion", "Expansion"),
+    low_income = ifelse(POVPIP <= 138, 1, 0),
+    insurance_type = ifelse(pubcov == 1, "Public", ifelse(privcov == 1, "Private", "Uninsured"))
+  )
+```
+
+```{r}
+nrow(acs[acs$expansion == 1 & acs$insured == 0,]) / nrow(acs[acs$expansion == 1 & (acs$insured == 0 | acs$insured == 1),])
+nrow(acs[acs$expansion == 0 & acs$insured == 0,]) / nrow(acs[acs$expansion == 0 & (acs$insured == 0 | acs$insured == 1),])
+```
+
+```{r}
+cutoff <- 138
+```
+
+```{r}
+state_rank <- acs |>
+  mutate(
+    PWGTP  = as.numeric(PWGTP),
+    insured = as.numeric(insured)
+  ) |>
+  filter(!is.na(state_name), !is.na(PWGTP), !is.na(insured)) |>
+  group_by(state_name) |>
+  summarise(
+    insured_rate = weighted.mean(insured, PWGTP, na.rm = TRUE),
+    .groups = "drop"
+  ) |>
+  arrange(desc(insured_rate)) |>
+  mutate(rank = row_number())
+
+rank_tbl <- state_rank |>
+  left_join(
+    acs |> distinct(state_name, expansion_name),
+    by = "state_name"
+  )
+
+dir.create("state_icons", showWarnings = FALSE)
+
+states_sf <- usmap::us_map(regions = "states")
+sf::st_geometry(states_sf) <- "geom"
+states_sf <- st_as_sf(states_sf)
+
+states_sf <- states_sf |>
+  left_join(rank_tbl |> select(state_name, expansion_name),
+            by = c("full" = "state_name"))
+
+safe_name <- function(x) gsub("[^A-Za-z0-9]+", "_", x)
+
+for (i in seq_len(nrow(states_sf))) {
+
+  nm <- states_sf$full[i]
+  status <- states_sf$expansion_name[i]
+
+  if (is.na(status)) next
+
+  fill_color <- if (status == "Expansion") {
+    medicaid_colors$expansion
+  } else {
+    medicaid_colors$nonexpansion
+  }
+
+  fn <- file.path("state_icons", paste0(safe_name(nm), ".png"))
+
+  png(filename = fn, width = 180, height = 120, bg = "transparent")
+  par(mar = rep(0, 4))
+  plot(
+    st_geometry(states_sf[i, ]),
+    col = fill_color,
+    border = NA,
+    axes = FALSE
+  )
+  dev.off()
+}
+
+rank_tbl <- rank_tbl |>
+  mutate(
+    insured_rate = percent(insured_rate, accuracy = 0.1),
+    icon_path = file.path("state_icons", paste0(safe_name(state_name), ".png"))
+  ) |>
+  arrange(rank) |>
+  select(rank, icon_path, state_name, insured_rate, expansion_name)
+
+gt(rank_tbl) |>
+  cols_label(
+    rank = "Rank",
+    icon_path = "",
+    state_name = "State",
+    insured_rate = "Insured Rate"
+  ) |>
+  cols_hide(columns = expansion_name) |>
+  text_transform(
+    locations = cells_body(columns = icon_path),
+    fn = function(x) {
+      local_image(filename = x, height = 18)
+    }
+  ) |>
+  tab_style(
+    style = cell_text(weight = "bold"),
+    locations = cells_body(columns = rank)
+  ) |>
+  tab_options(
+    table.font.size = px(12),
+    column_labels.font.weight = "600",
+    data_row.padding = px(4),
+    table.border.top.style = "hidden",
+    table.border.bottom.style = "hidden",
+    table_body.hlines.style = "hidden",
+    table_body.border.top.style = "hidden",
+    table_body.border.bottom.style = "hidden"
+  )
+
+```
+
+```{r}
+plot_df <- acs |>
+  group_by(expansion, POVPIP) |>
+  summarise(
+    insured_rate = weighted.mean(insured, PWGTP),
+    .groups = "drop"
+  ) |>
+  mutate(
+    expansion = factor(expansion,
+                       levels = c(1, 0),
+                       labels = c("Expansion", "Non-Expansion"))
+  )
+
+# png(
+#   filename = "images/insurance_coverage_by_expansion_status_void.png",
+#   width = 6000,
+#   height = 4000,
+#   res = 300
+# )
+
+ggplot(plot_df, aes(x = POVPIP, y = insured_rate, color = expansion)) +
+  geom_point(alpha = 0.15) +
+  geom_smooth(se = FALSE, method = "loess", span = 0.2) +
+  scale_y_continuous(labels = percent_format(accuracy = 1)) +
+  geom_vline(xintercept = cutoff, linetype = "dashed", color = medicaid_colors$expansion) +
+  geom_vline(xintercept = 100, linetype = "dashed", color = medicaid_colors$nonexpansion) +
+  labs(
+    title = "",
+    x = "Percent of Federal Poverty Level (%)",
+    y = "Insured Rate",
+    color = "State Type"
+  ) +
+  scale_color_medicaid("expansion_state") +
+  theme_medicaid() +
+  theme(
+    legend.position = "none",
+  )
+
+# dev.off()
+# ggsave("images/insurance_coverage_by_expansion_status.png")
+```
+
+```{r}
+binwidth <- 5  
+
+bar_df <- acs |>
+  mutate(
+    POVPIP = as.numeric(POVPIP),
+    PWGTP  = as.numeric(PWGTP),
+    uninsured = ifelse(HICOV == 2, 1, 0),
+    expansion = factor(expansion,
+                       levels = c(1, 0),
+                       labels = c("Expansion", "Non-Expansion")),
+    bin = floor(POVPIP / binwidth) * binwidth
+  ) |>
+  filter(!is.na(bin), !is.na(PWGTP), !is.na(expansion)) |>
+  group_by(expansion, bin) |>
+  summarise(
+    uninsured_rate = weighted.mean(uninsured, PWGTP, na.rm = TRUE),
+    n = n(),
+    .groups = "drop"
+  ) |>
+  filter(n >= 30) 
+
+# png(
+#   filename = "images/coverage_bar.png",
+#   width = 12000,
+#   height = 2000,
+#   res = 300,
+#   bg = "transparent"
+# )
+
+ggplot(bar_df, aes(x = bin, y = uninsured_rate)) +
+  geom_col(
+    data = subset(bar_df, expansion == "Non-Expansion"),
+    fill = medicaid_colors$nonexpansion,
+    width = binwidth,
+    color = "black",
+    linewidth = 0.2
+  ) +
+  geom_col(
+    data = subset(bar_df, expansion == "Expansion"),
+    fill = medicaid_colors$expansion,
+    width = binwidth,
+    color = "black",
+    linewidth = 0.2
+  ) +
+  scale_y_continuous(labels = scales::percent_format(accuracy = 1)) +
+  theme_medicaid() +
+  theme(
+    legend.position = "none",
+    plot.background  = element_rect(fill = "transparent", color = NA),
+    panel.background = element_rect(fill = "transparent", color = NA)) +
+  labs(
+    x = "Percent of Federal Poverty Level",
+    y = "Uninsured Rate"
+  )
+
+# dev.off()
+```
+
+
+```{r}
+state_personograph <- acs |> 
+  filter(low_income == 1) |> 
+  group_by(state_name) |> 
+  summarize(
+    low_income_uninsured_rate = weighted.mean(low_income_uninsured, PWGTP),
+    expansion = mean(expansion)
+  ) |> 
+  mutate(
+    low_income_uninsured_rate = low_income_uninsured_rate,
+    expansion = expansion
+  )
+
+for (i in 1:nrow(state_personograph)) {
+  props <- list(
+    "Insured" = 1 - state_personograph$low_income_uninsured_rate[i],
+    "Uninsured" = state_personograph$low_income_uninsured_rate[i]
+  )
+
+  # png(
+  #   filename = paste0("images/personograph/", state_personograph$state_name[i], ".png"),
+  #   width = 1000,
+  #   height = 1000,
+  #   res = 300
+  # )
+  
+  personograph(props, n.icons = 100, icon.style = 6, color = list("Uninsured" = ifelse(state_personograph$expansion[i] == 1, medicaid_colors$expansion, medicaid_colors$nonexpansion), "Insured" = "gray"), plot.width = 0.95, fig.title = state_personograph$state_name[i])
+  
+  # dev.off()
+}
+```
+
+```{r}
+states_sf <- usmap::us_map(regions = "states")
+sf::st_geometry(states_sf) <- "geom"
+
+states_map <- acs |> 
+  select(state_name, expansion_name) |> 
+  distinct() |> 
+  rename(state = state_name)
+
+map_data <- states_sf %>%
+  left_join(states_map, by = c("full" = "state"))
+
+plot_usmap(data = states_map, values = "expansion_name", labels = FALSE) +
+  scale_fill_manual(values = c("Expansion" = medicaid_colors$expansion, "Non-Expansion" = medicaid_colors$nonexpansion), name = "Medicaid Expansion Status") +
+  theme(legend.position = "none") +
+  theme_void() +
+  theme(
+    legend.position = "none",
+    panel.background = element_rect(fill = "transparent", color = NA),
+    plot.background  = element_rect(fill = "transparent", color = NA)
+  )
+
+# ggsave("images/map.png", bg = "transparent")
+```

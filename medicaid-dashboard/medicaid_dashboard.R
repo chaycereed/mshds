@@ -97,10 +97,20 @@ ui <- fluidPage(
   theme = bs_theme(bootswatch = "morph"),
   tags$style(value_box_css),
   useShinyjs(),
+  tags$h2(
+    "Medicaid Expansion & Insurance Coverage in the United States",
+    style = "padding: 15px 0px 10px 15px; font-weight: 600;"
+  ),
   
   # Map
   leafletOutput("state_map", height = "750px"),
   br(),
+  
+  # Prompt shown when no state is selected
+  div(id = "no_selection",
+      p("Click a state on the map to view insurance coverage statistics.",
+        style = "color: #888; font-style: italic; text-align: center; padding: 20px;")
+  ),
   
   # State detail panel — hidden until a state is clicked
   hidden(
@@ -148,12 +158,14 @@ server <- function(input, output, session) {
   
   observeEvent(input$state_map_shape_click, {
     selected_state(input$state_map_shape_click$id)
+    hideElement("no_selection")
     showElement("state_detail")
   })
   
   observeEvent(input$clear, {
     selected_state(NULL)
     hideElement("state_detail")
+    showElement("no_selection")
   })
   
   # Filtered map_summary row for selected state

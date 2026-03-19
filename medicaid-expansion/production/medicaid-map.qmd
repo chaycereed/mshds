@@ -1,0 +1,1138 @@
+---
+title: "Medicaid Map: Visualizations"
+author: "Chayce Reed"
+format: html
+editor: visual
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+# Libraries
+
+```{r}
+library(tidyverse) # for ggplot, dplyr, and all that
+library(systemfonts) # for my custom mediciad theme
+library(showtext) # for my ustom mediciad theme
+library(scales) # for formatting percent axis values (since we will use % FPL and % uninsured)
+library(fixest) # for DiD 
+library(gt) # for the ranking table
+library(usmap) # for us map
+library(sf) # for us map
+library(personograph) # for the personograph
+library(jsonlite) # for saving df as a json (for the website)
+library(patchwork) # for the state-specific information display
+```
+
+# Theme: Medicaid
+
+```{r}
+# first things first, lets create our custom mediciad theme, to reuse for all our plots
+# the main goal of mediciad_color palette is to differentiate between expansion and nonexpansion states
+# expansion = blue, nonexpansion = red
+# we will also include colors for specific outcomes, although TBD if they will get used
+# insurance coverage = teal, financial burden = purple
+medicaid_colors <- list(
+  expansion = "#0342A1",
+  expansion_cont = c("#0B81D2", "#0053B1", "#0342A1", "#002880", "#011B5B"),
+  
+  nonexpansion = "#C6010B",
+  nonexpansion_cont = c("#FD2640", "#E80016",  "#C6010B", "#A00002", "#6D0100"),
+  
+  expansion_state = c("#0342A1","#C6010B")
+)
+```
+
+```{r}
+# reusable function to help us format the color palette and return the correct number
+# of colors/shades
+medicaid_palette <- function(palette = "categorical", n = NULL, reverse = FALSE) {
+  pal <- medicaid_colors[[palette]]
+  if (reverse) pal <- rev(pal)
+  if (!is.null(n)) {
+    if (n <= length(pal)) {
+      pal <- pal[1:n]
+    }
+    else {
+      pal <- colorRampPalette(pal)(n)
+    }
+  }
+  return(pal)
+}
+```
+
+```{r}
+# for color scales (scatter plots, line plots, etc)
+scale_color_medicaid <- function(palette = "categorical", reverse = FALSE, ...) {
+    pal <- medicaid_palette(palette = palette, reverse = reverse)
+    ggplot2::discrete_scale(
+      "colour",
+      paste0("medicaid_", palette),
+      palette = function(n) pal[1:n],
+      ...
+  )
+}
+
+# for fill scales (bars, density, areas, boxplots etc)
+scale_fill_medicaid <- function(palette = "categorical", reverse = FALSE, ...) {
+  pal <- medicaid_palette(palette = palette, reverse = reverse)
+  ggplot2::discrete_scale(
+    "fill",
+    paste0("medicaid_", palette),
+    palette = function(n) pal[1:n],
+    ...
+  )
+}
+```
+
+```{r}
+# add our desired fonts, to use in our plots
+font_add_google("Instrument Serif", "instrument-serif")
+font_add_google("Instrument Sans", "instrument-sans")
+font_add_google("IBM Plex Mono", "ibm-plex-mono")
+showtext_auto()
+
+font_title <- "instrument-serif"
+font_body <- "instrument-sans"
+font_data <- "ibm-plex-mono"
+```
+
+```{r}
+# now lets create a wrapper for our theme so we can easily add the layer to the plots
+theme_medicaid <- function() {
+  theme_minimal() +
+    theme(
+      plot.title = element_text(color = "black", family = font_title, size = 30, face = "italic"),
+      plot.subtitle = element_text(color = "black", family = font_title, size = 18, face = "italic"),
+      axis.title = element_text(color = "black", family = font_body, size = 12),
+      axis.text = element_text(color = "black", family = font_data, size = 10),
+      legend.title = element_text(color = "black", family = font_body, size = 12, face = "bold"),
+      legend.text = element_text(color = "black", family = font_data, size = 10),
+    )
+}
+```
+
+# Data: ACS
+
+```{r}
+# set filepath so we can reuse it throughout the script
+filepath <- paste0(getwd(), "/data/")
+```
+
+```{r}
+# each dataset contains ~ 2+ millions rows and 280 columns
+# with 26 datasets (13 years, 2 for each year), let's preemptively declare
+# and load only the variables we plan to use
+
+# for this analysis, we will need:
+# state, age, poverty level (% FPL), private insurance (yes/no), public insurance (yes/no), any insurance (yes/no), subject weights
+# the 2023 dataset renamed the ST column to STATE, so lets create two sets of variable names to load (col2 = 2023, col = everything else)
+cols <- c("ST", "AGEP", "POVPIP", "PRIVCOV", "PUBCOV", "HICOV", "PWGTP")
+cols2 <- c("STATE", "AGEP", "POVPIP", "PRIVCOV", "PUBCOV", "HICOV", "PWGTP")
+
+# now load the datasets for each year (2 datasets per year, a and b) and use col_select to only load the columns we need
+# lets also create a new column called year
+acs_data_a_2010 <- read_csv(file.path(filepath, "/csv_pus_2010/ss10pusa.csv"), col_select = all_of(cols), show_col_types = FALSE) |> mutate(ST = as.character(ST), year = 2010)
+acs_data_b_2010 <- read_csv(file.path(filepath, "/csv_pus_2010/ss10pusb.csv"), col_select = all_of(cols), show_col_types = FALSE) |> mutate(ST = as.character(ST), year = 2010)
+
+acs_data_a_2011 <- read_csv(file.path(filepath, "/csv_pus_2011/ss11pusa.csv"), col_select = all_of(cols), show_col_types = FALSE) |> mutate(ST = as.character(ST), year = 2011)
+acs_data_b_2011 <- read_csv(file.path(filepath, "/csv_pus_2011/ss11pusb.csv"), col_select = all_of(cols), show_col_types = FALSE) |> mutate(ST = as.character(ST), year = 2011)
+
+acs_data_a_2012 <- read_csv(file.path(filepath, "/csv_pus_2012/ss12pusa.csv"), col_select = all_of(cols), show_col_types = FALSE) |> mutate(ST = as.character(ST), year = 2012)
+acs_data_b_2012 <- read_csv(file.path(filepath, "/csv_pus_2012/ss12pusb.csv"), col_select = all_of(cols), show_col_types = FALSE) |> mutate(ST = as.character(ST), year = 2012)
+
+acs_data_a_2013 <- read_csv(file.path(filepath, "/csv_pus_2013/ss13pusa.csv"), col_select = all_of(cols), show_col_types = FALSE) |> mutate(ST = as.character(ST), year = 2013)
+acs_data_b_2013 <- read_csv(file.path(filepath, "/csv_pus_2013/ss13pusb.csv"), col_select = all_of(cols), show_col_types = FALSE) |> mutate(ST = as.character(ST), year = 2013)
+
+acs_data_a_2014 <- read_csv(file.path(filepath, "/csv_pus_2014/ss14pusa.csv"), col_select = all_of(cols), show_col_types = FALSE) |> mutate(ST = as.character(ST), year = 2014)
+acs_data_b_2014 <- read_csv(file.path(filepath, "/csv_pus_2014/ss14pusb.csv"), col_select = all_of(cols), show_col_types = FALSE) |> mutate(ST = as.character(ST), year = 2014)
+
+acs_data_a_2015 <- read_csv(file.path(filepath, "/csv_pus_2015/ss15pusa.csv"), col_select = all_of(cols), show_col_types = FALSE) |> mutate(ST = as.character(ST), year = 2015)
+acs_data_b_2015 <- read_csv(file.path(filepath, "/csv_pus_2015/ss15pusb.csv"), col_select = all_of(cols), show_col_types = FALSE) |> mutate(ST = as.character(ST), year = 2015)
+
+acs_data_a_2016 <- read_csv(file.path(filepath, "/csv_pus_2016/ss16pusa.csv"), col_select = all_of(cols), show_col_types = FALSE) |> mutate(ST = as.character(ST), year = 2016)
+acs_data_b_2016 <- read_csv(file.path(filepath, "/csv_pus_2016/ss16pusb.csv"), col_select = all_of(cols), show_col_types = FALSE) |> mutate(ST = as.character(ST), year = 2016)
+
+acs_data_a_2017 <- read_csv(file.path(filepath, "/csv_pus_2017/psam_pusa.csv"), col_select = all_of(cols), show_col_types = FALSE) |> mutate(ST = as.character(ST), AGEP = as.character(AGEP), year = 2017)
+acs_data_b_2017 <- read_csv(file.path(filepath, "/csv_pus_2017/psam_pusb.csv"), col_select = all_of(cols), show_col_types = FALSE) |> mutate(ST = as.character(ST), AGEP = as.character(AGEP), year = 2017)
+
+acs_data_a_2018 <- read_csv(file.path(filepath, "/csv_pus_2018/psam_pusa.csv"), col_select = all_of(cols), show_col_types = FALSE) |> mutate(ST = as.character(ST), AGEP = as.character(AGEP), POVPIP = as.character(POVPIP), PWGTP = as.character(PWGTP), year = 2018)
+acs_data_b_2018 <- read_csv(file.path(filepath, "/csv_pus_2018/psam_pusb.csv"), col_select = all_of(cols), show_col_types = FALSE) |> mutate(ST = as.character(ST), AGEP = as.character(AGEP), POVPIP = as.character(POVPIP), PWGTP = as.character(PWGTP), year = 2018)
+
+acs_data_a_2019 <- read_csv(file.path(filepath, "/csv_pus_2019/psam_pusa.csv"), col_select = all_of(cols), show_col_types = FALSE) |> mutate(ST = as.character(ST), AGEP = as.character(AGEP), POVPIP = as.character(POVPIP), PWGTP = as.character(PWGTP), year = 2019)
+acs_data_b_2019 <- read_csv(file.path(filepath, "/csv_pus_2019/psam_pusb.csv"), col_select = all_of(cols), show_col_types = FALSE) |> mutate(ST = as.character(ST), AGEP = as.character(AGEP), POVPIP = as.character(POVPIP), PWGTP = as.character(PWGTP), year = 2019)
+
+acs_data_a_2021 <- read_csv(file.path(filepath, "/csv_pus_2021/psam_pusa.csv"), col_select = all_of(cols), show_col_types = FALSE) |> mutate(ST = as.character(ST), AGEP = as.character(AGEP), POVPIP = as.character(POVPIP), PWGTP = as.character(PWGTP), year = 2021)
+acs_data_b_2021 <- read_csv(file.path(filepath, "/csv_pus_2021/psam_pusb.csv"), col_select = all_of(cols), show_col_types = FALSE) |> mutate(ST = as.character(ST), AGEP = as.character(AGEP), POVPIP = as.character(POVPIP), PWGTP = as.character(PWGTP), year = 2021)
+
+acs_data_a_2022 <- read_csv(file.path(filepath, "/csv_pus_2022/psam_pusa.csv"), col_select = all_of(cols), show_col_types = FALSE) |> mutate(ST = as.character(ST), AGEP = as.character(AGEP), POVPIP = as.character(POVPIP), PWGTP = as.character(PWGTP), year = 2022)
+acs_data_b_2022 <- read_csv(file.path(filepath, "/csv_pus_2022/psam_pusb.csv"), col_select = all_of(cols), show_col_types = FALSE) |> mutate(ST = as.character(ST), AGEP = as.character(AGEP), POVPIP = as.character(POVPIP), PWGTP = as.character(PWGTP), year = 2022)
+
+acs_data_a_2023 <- read_csv(file.path(filepath, "/csv_pus_2023/psam_pusa.csv"), col_select = all_of(cols2), show_col_types = FALSE) |> mutate(STATE = as.character(STATE), AGEP = as.character(AGEP), POVPIP = as.character(POVPIP), PWGTP = as.character(PWGTP), year = 2023) |> rename(ST = STATE)
+acs_data_b_2023 <- read_csv(file.path(filepath, "/csv_pus_2023/psam_pusb.csv"), col_select = all_of(cols2), show_col_types = FALSE) |> mutate(STATE = as.character(STATE), AGEP = as.character(AGEP), POVPIP = as.character(POVPIP), PWGTP = as.character(PWGTP), year = 2023) |> rename(ST = STATE)
+
+# now that everything is loaded, lets combined them into a single dataset
+acs <- bind_rows(acs_data_a_2010, acs_data_b_2010, 
+                 acs_data_a_2011, acs_data_b_2011, 
+                 acs_data_a_2012, acs_data_b_2012, 
+                 acs_data_a_2013, acs_data_b_2013,
+                 acs_data_a_2014, acs_data_b_2014, 
+                 acs_data_a_2015, acs_data_b_2015,
+                 acs_data_a_2016, acs_data_b_2016,
+                 acs_data_a_2017, acs_data_b_2017,
+                 acs_data_a_2018, acs_data_b_2018,
+                 acs_data_a_2019, acs_data_b_2019,
+                 acs_data_a_2021, acs_data_b_2021,
+                 acs_data_a_2022, acs_data_b_2022,
+                 acs_data_a_2023, acs_data_b_2023)
+```
+
+```{r}
+# lets remove all individual year datasets, now that we only need acs
+rm(list = ls(pattern = "^acs_data_"))
+# force garbage collection to free memory
+gc()
+```
+
+```{r}
+# the states are currently coded as numeric values,
+# lets create a lookup table so we can create a new column for the full state names
+state_lookup <- c(
+  "01" = "Alabama",
+  "02" = "Alaska",
+  "04" = "Arizona",
+  "05" = "Arkansas",
+  "06" = "California",
+  "08" = "Colorado",
+  "09" = "Connecticut",
+  "10" = "Delaware",
+  "11" = "District of Columbia",
+  "12" = "Florida",
+  "13" = "Georgia",
+  "15" = "Hawaii",
+  "16" = "Idaho",
+  "17" = "Illinois",
+  "18" = "Indiana",
+  "19" = "Iowa",
+  "20" = "Kansas",
+  "21" = "Kentucky",
+  "22" = "Louisiana",
+  "23" = "Maine",
+  "24" = "Maryland",
+  "25" = "Massachusetts",
+  "26" = "Michigan",
+  "27" = "Minnesota",
+  "28" = "Mississippi",
+  "29" = "Missouri",
+  "30" = "Montana",
+  "31" = "Nebraska",
+  "32" = "Nevada",
+  "33" = "New Hampshire",
+  "34" = "New Jersey",
+  "35" = "New Mexico",
+  "36" = "New York",
+  "37" = "North Carolina",
+  "38" = "North Dakota",
+  "39" = "Ohio",
+  "40" = "Oklahoma",
+  "41" = "Oregon",
+  "42" = "Pennsylvania",
+  "44" = "Rhode Island",
+  "45" = "South Carolina",
+  "46" = "South Dakota",
+  "47" = "Tennessee",
+  "48" = "Texas",
+  "49" = "Utah",
+  "50" = "Vermont",
+  "51" = "Virginia",
+  "53" = "Washington",
+  "54" = "West Virginia",
+  "55" = "Wisconsin",
+  "56" = "Wyoming",
+  "72" = "Puerto Rico"
+)
+
+# now, lets define the states that have not implemented medicaid expansion
+non_expansion <- c(
+  "Alabama",
+  "Florida",
+  "Georgia",
+  "Kansas",
+  "Mississippi",
+  "South Carolina",
+  "Tennessee",
+  "Texas",
+  "Wisconsin",
+  "Wyoming"
+)
+
+expansion_years <- c(
+  "Alabama"              = NA,
+  "Alaska"               = 2015,
+  "Arizona"              = 2014,
+  "Arkansas"             = 2014,
+  "California"           = 2014,
+  "Colorado"             = 2014,
+  "Connecticut"          = 2014,
+  "Delaware"             = 2014,
+  "District of Columbia" = 2014,
+  "Florida"              = NA,
+  "Georgia"              = NA,
+  "Hawaii"               = 2014,
+  "Idaho"                = 2020,
+  "Illinois"             = 2014,
+  "Indiana"              = 2015,
+  "Iowa"                 = 2014,
+  "Kansas"               = NA,
+  "Kentucky"             = 2014,
+  "Louisiana"            = 2016,
+  "Maine"                = 2019,
+  "Maryland"             = 2014,
+  "Massachusetts"        = 2014,
+  "Michigan"             = 2014,
+  "Minnesota"            = 2014,
+  "Mississippi"          = NA,
+  "Missouri"             = 2021,
+  "Montana"              = 2016,
+  "Nebraska"             = 2020,
+  "Nevada"               = 2014,
+  "New Hampshire"        = 2014,
+  "New Jersey"           = 2014,
+  "New Mexico"           = 2014,
+  "New York"             = 2014,
+  "North Carolina"       = 2023,
+  "North Dakota"         = 2014,
+  "Ohio"                 = 2014,
+  "Oklahoma"             = 2021,
+  "Oregon"               = 2014,
+  "Pennsylvania"         = 2015,
+  "Rhode Island"         = 2014,
+  "South Carolina"       = NA,
+  "South Dakota"         = 2023,
+  "Tennessee"            = NA,
+  "Texas"                = NA,
+  "Utah"                 = 2020,
+  "Vermont"              = 2014,
+  "Virginia"             = 2019,
+  "Washington"           = 2014,
+  "West Virginia"        = 2014,
+  "Wisconsin"            = NA,
+  "Wyoming"              = NA
+)
+
+# lets create that new column for the full state names
+acs$state_name <- state_lookup[acs$ST]
+acs$expansion_year <- expansion_years[acs$state_name]
+```
+
+```{r}
+# now lets do some datat cleaning and wrangling
+acs <- acs |>
+  # first, filter by working age adults (18-64)
+  # next, remove any rows with NA income-to-poverty ratio values and subject weights (we need those)
+  # finally, lets only look at US states, so excluding US territories of PR and DC (sorry)
+  filter(AGEP >= 18, AGEP <= 64, !is.na(POVPIP), !is.na(PWGTP), state_name != "Puerto Rico", state_name != "District of Columbia") |> 
+  mutate(
+    # now, lets update the following to be based on 0/1 instead of 2/1 (like acs originally had it)
+    insured  = ifelse(HICOV == 1, 1, 0),
+    uninsured = ifelse(HICOV == 2, 1, 0),
+    privcov = ifelse(PRIVCOV == 1, 1, 0),
+    pubcov  = ifelse(PUBCOV == 1, 1, 0),
+    # lets create new columns to identify our expansion vs nonexpansion states
+    expansion = ifelse(state_name %in% non_expansion, 0, 1),
+    expansion_name = ifelse(state_name %in% non_expansion, "Non-Expansion", "Expansion"),
+    # lets create a new column to identify those equal or under 138% FPL
+    low_income = ifelse(POVPIP <= 138, 1, 0),
+    # make sure povert-to-income rartio and subject weights are numeric values for calcs later on
+    POVPIP = as.numeric(POVPIP),
+    PWGTP  = as.numeric(PWGTP),
+  )
+```
+
+```{r}
+# lets also create a dataset just for 2023
+# this will be used for current distributions of coverage (based on FPL), instead
+# of coverage changes over time
+acs_2023 <- acs |> 
+    filter(year == 2023)
+```
+
+```{r}
+# now, lets take a glimpse at our main dataset
+glimpse(acs)
+
+# Rows: 24,517,500
+# Columns: 16
+```
+
+# Plot: Ranking States by Insured Rate
+
+```{r}
+# for ranking states by insured rates,
+# lets first filter by low income (<= 138% FPL)
+# group by state and then calculate the insured rate for each state
+state_rank <- acs_2023 |>
+  filter(low_income == 1) |> 
+  group_by(state_name) |>
+  summarise(
+    insured_rate = weighted.mean(insured, PWGTP),
+    .groups = "drop"
+  ) |>
+  arrange(desc(insured_rate)) |>
+  mutate(rank = row_number())
+
+# now that we have our state rankings, we need to add back in our
+# expansion type (expansion vs non-expansion) so we can color-code the state icons
+rank_tbl <- state_rank |>
+  left_join(
+    acs |> distinct(state_name, expansion_name),
+    by = "state_name"
+  )
+
+# create directory so we can save the state icons
+dir.create("state_icons", showWarnings = FALSE)
+
+# using usmap and sf libraries to create state icons (for use in the gt table)
+states_sf <- usmap::us_map(regions = "states")
+sf::st_geometry(states_sf) <- "geom"
+states_sf <- st_as_sf(states_sf)
+
+# combine our state rankings with the state icons
+states_sf <- states_sf |>
+  left_join(rank_tbl |> select(state_name, expansion_name),
+            by = c("full" = "state_name"))
+
+# create file names for saving the state icon images
+safe_name <- function(x) gsub("[^A-Za-z0-9]+", "_", x)
+
+# loop through each state, creating and saving the state icon image for each
+for (i in seq_len(nrow(states_sf))) {
+  # full state name and expansion status, for this loop
+  nm <- states_sf$full[i]
+  status <- states_sf$expansion_name[i]
+
+  # if expansion status is blank, skip to next state
+  if (is.na(status)) next
+
+  # determine state icon color (blue or red) based on expansion status
+  fill_color <- if (status == "Expansion") {
+    medicaid_colors$expansion
+  } else {
+    medicaid_colors$nonexpansion
+  }
+
+  # save the color-coded state icon, so we can use it later for the state ranking table
+  fn <- file.path("state_icons", paste0(safe_name(nm), ".png"))
+  # png(filename = fn, width = 180, height = 120, bg = "transparent")
+  # par(mar = rep(0, 4))
+  # plot(
+  #   st_geometry(states_sf[i, ]),
+  #   col = fill_color,
+  #   border = NA,
+  #   axes = FALSE
+  # )
+  # dev.off()
+}
+
+# now that we have our state icon pngs, lets add them to our ranking df
+rank_tbl <- rank_tbl |>
+  mutate(
+    insured_rate = percent(insured_rate, accuracy = 0.1),
+    icon_path = file.path("state_icons", paste0(safe_name(state_name), ".png"))
+  ) |>
+  arrange(rank) |>
+  select(rank, icon_path, state_name, insured_rate, expansion_name)
+
+# now use gt library to make the final, poster-ready ranking table
+gt(rank_tbl) |>
+  # four columns: rank, color-coded state icon, state name, insured rate (%)
+  cols_label(
+    rank = "Rank",
+    icon_path = "",
+    state_name = "State",
+    insured_rate = "Insured Rate"
+  ) |>
+  # since we color the state icons by expansion status, lets hide the expansion status column
+  cols_hide(columns = expansion_name) |>
+  # add the state icon pngs
+  text_transform(
+    locations = cells_body(columns = icon_path),
+    fn = function(x) {
+      local_image(filename = x, height = 18)
+    }
+  ) |>
+  # adjust column names format
+  tab_style(
+    style = cell_text(weight = "bold"),
+    locations = cells_body(columns = rank)
+  ) |>
+  # format font and remove column / row lines 
+  tab_options(
+    table.font.size = px(12),
+    column_labels.font.weight = "600",
+    data_row.padding = px(4),
+    table.border.top.style = "hidden",
+    table.border.bottom.style = "hidden",
+    table_body.hlines.style = "hidden",
+    table_body.border.top.style = "hidden",
+    table_body.border.bottom.style = "hidden"
+  )
+```
+
+```{r}
+# create a new df containing the specific columns we want to include in the json
+rank_json <- rank_tbl |> 
+  select(rank, state_name, insured_rate, expansion_name)
+
+# create a json file to use for the website
+# write_json(rank_json, "json/state-insurance-ranking.json", pretty = TRUE, auto_unbox = TRUE)
+```
+
+# Plot: Personograph of Uninsured Rates by State
+
+```{r}
+# to create the personograph, we need to calculate the uninsured rates for
+# the low income population (<= 138% FPL)
+state_personograph <- acs_2023 |>
+  filter(low_income == 1) |> 
+  group_by(state_name, expansion) |>
+  summarize(
+    uninsured_rate = weighted.mean(uninsured, PWGTP),
+    .groups = "drop"
+  ) |>
+  mutate(
+    uninsured_rate = uninsured_rate,
+    expansion = expansion
+  )
+
+# next, we will loop through each state, determining the insured population and uninsured population
+for (i in 1:nrow(state_personograph)) {
+  props <- list(
+    "Insured" = 1 - state_personograph$uninsured_rate[i],
+    "Uninsured" = state_personograph$uninsured_rate[i]
+  )
+
+  # save each personograph so we can add it to our poster
+  # png(
+  #   filename = paste0("images/personograph/", state_personograph$state_name[i], ".png"),
+  #   width = 1000,
+  #   height = 1000,
+  #   res = 300
+  # )
+
+  # use the personograph library to create the visual
+  # 100 icons, proportion colored is based on the uninsured rate
+  personograph(props, n.icons = 100, icon.style = 6, color = list("Uninsured" = ifelse(state_personograph$expansion[i] == 1, medicaid_colors$expansion, medicaid_colors$nonexpansion), "Insured" = "gray"), plot.width = 0.95, fig.title = state_personograph$state_name[i])
+
+  # dev.off()
+}
+```
+
+```{r}
+# create a df containing the information we need for the json
+# write_json(state_personograph, "json/state-personograph.json", pretty = TRUE, auto_unbox = TRUE)
+```
+
+# Plot: Insurance Rates by FPL
+
+```{r}
+# since we have continuous FPL data, we need group it before plotting
+# groups of 10% 
+bin_width <- 10
+
+# now lets create a dataframe that contains the average uninsured rate per
+# FPL group per state
+fpl_coverage_df <- acs_2023 |>
+  mutate(
+    # creating the bins
+    bin = floor(POVPIP / bin_width) * bin_width,
+    # setting the value of the bin to the middle
+    bin_mid = bin + bin_width / 2
+  ) |>
+  group_by(state_name, expansion, bin_mid) |>
+  summarise(
+    # calculate uninsured rate for the state/bin (using the subject weights)
+    uninsured_rate = weighted.mean(uninsured, PWGTP),
+    n = n(),
+    .groups = "drop"
+  ) |>
+  mutate(
+    # make sure the expansion status is a factor, so it uses the correct colors
+    expansion = factor(expansion, levels = c(1, 0), labels = c("Expansion", "Non-Expansion"))
+  )
+
+# for this plot, we are also going to include the nationwide average uninsured rate
+# this way, we can compare each states distribution of uninsurance over FPL to the national average
+avg_df <- fpl_coverage_df |>
+  group_by(bin_mid) |>
+  summarise(
+    avg_uninsured = weighted.mean(uninsured_rate, w = n),
+    n = n(),
+    .groups = "drop"
+  )
+```
+
+```{r}
+# now, we cna plot
+# we will plot FPL % on the x axis, and uninsured rate on the y, colored by expansion status (so we can indentify
+# which states expanded and which did not, and explore any trends there), and group by state so we can 
+# facet wrap and plot each state individually
+ggplot(fpl_coverage_df, aes(x = bin_mid, y = uninsured_rate, color = expansion, group = state_name)) +
+  # state-specific
+  geom_line() +
+  # national average 
+  geom_line(data = avg_df, aes(x = bin_mid, y = avg_uninsured, group = 1), inherit.aes = FALSE, color = "gray60") +
+  # threshold for medicaid eligibility after expansion 
+  geom_vline(xintercept = 138, linetype = "dotted", linewidth  = 0.7, color = "gray40") +
+  # 
+  annotate(
+    "text",
+    x        = 155,
+    y        = max(fpl_coverage_df$uninsured_rate, na.rm = TRUE) - 0.05,
+    label    = "138% FPL",
+    hjust    = 0.00,
+    size     = 3.0,
+    color    = "gray40",
+    fontface = "italic"
+  ) +
+  # state-specific plots
+  facet_wrap(~ state_name, scales = "fixed", ncol = 5) +
+  # convert axis to percent
+  scale_y_continuous(labels = percent_format(accuracy = 1)) +
+  scale_x_continuous(labels = percent_format(accuracy = 1, scale = 1)) +
+  # use our custom mediciad color palette
+  scale_color_manual(values = medicaid_colors$expansion_state) +
+  # add our axis labels and a caption for the data source
+  labs(
+    # title = "Uninsured Rates Across Federal Poverty Level (FPL)",
+    x = "Federal Poverty Level",
+    y = "Uninsured Rate",
+    color = "Expansion Status",
+    caption  = "Source: ACS PUMS 2023"
+  ) +
+  # apply our custom medicaid theme and fonts
+  theme_medicaid() +
+  # hide the legend (we will add our own on the poster)
+  theme(
+    legend.position  = "none",
+    panel.grid.minor = element_blank()
+  )
+```
+
+```{r}
+# prepare df a complete json for the website (merging individual state data with national average data)
+avg_json <- avg_df |> 
+  mutate(
+    state_name = "National",
+    uninsured_rate = avg_uninsured,
+    expansion = NA,
+    n = n
+  ) |> 
+  select(state_name, expansion, bin_mid, uninsured_rate, n)
+
+fpl_coverage_json <- bind_rows(fpl_coverage_df, avg_json)
+
+# save json so we can use it in the website
+# write_json(fpl_coverage_json, "json/state-uninsured-by-income-level.json", pretty = TRUE, auto_unbox = TRUE)
+```
+
+# Plot: Nationwide DiD
+
+```{r}
+# the difference-in-difference plot, will demosntrate the change in uninsured rates
+# over time. nontably, before and ACA in 2014 and the difference in changes between
+# expansion and nonexpanison states
+state_year_panel <- acs |> 
+  # for this analysis, we are only going to focus on those under 138% (most likely to have been affected by these policy changes)
+  filter(low_income == 1) |> 
+  group_by(state_name, year, expansion, expansion_year) |> 
+  summarise(
+    uninsured_rate = weighted.mean(uninsured, as.numeric(PWGTP)),
+    n = n(),
+    .groups = "drop"
+  )
+```
+
+```{r}
+# now, we want to identify the pre treatment and post treatment groups (before/after 2014)
+# and years relative to the date of treatment
+state_year_panel_did <- state_year_panel |>
+  filter(expansion_year == 2014 | is.na(expansion_year)) |>
+  mutate(
+    post     = ifelse(year >= 2014, 1, 0),
+    year_rel = year - 2014,
+    year_f   = factor(year)
+  )
+```
+
+```{r}
+# using the fixest library, we can build our DiD model
+did_model <- feols(
+  uninsured_rate ~ i(year_rel, expansion, ref = -1) | state_name + year_f,
+  data = state_year_panel_did,
+  cluster = ~state_name
+)
+```
+
+```{r}
+# extract coefficients and confidence intervals
+did_coefs <- broom::tidy(did_model, conf.int = TRUE) |>
+  mutate(
+    year_rel = as.numeric(str_extract(term, "-?[0-9]+")),
+    year     = year_rel + 2014
+  ) |>
+  bind_rows(
+    tibble(
+      term      = "reference",
+      estimate  = 0,
+      std.error = 0,
+      conf.low  = 0,
+      conf.high = 0,
+      year_rel  = -1,
+      year      = 2013
+    )
+  ) |>
+  arrange(year) |>
+  select(year, year_rel, estimate, std.error, conf.low, conf.high)
+```
+
+```{r}
+# lets determine the national average for each group and year 
+# for example, 2014 expansion, 2014 non expansion, 2015 expansion, 2015 non expansion, etc
+group_avg <- state_year_panel_did |>
+  group_by(year, expansion) |>
+  summarise(
+    avg_uninsured = weighted.mean(uninsured_rate, n, na.rm = TRUE),
+    .groups = "drop"
+  ) |>
+  mutate(
+    expansion_name = ifelse(expansion == 1, "Expansion", "Non-Expansion")
+  )
+```
+
+```{r}
+# now, lets calculate our counterfactuals, based on the national averages
+counterfactual_df <- group_avg |>
+  left_join(did_coefs, by = "year") |>
+  mutate(
+    counterfactual = case_when(
+      # for expansion states, subtract the effect (if not expanded)
+      expansion == 1 ~ avg_uninsured - estimate,
+      # for nonexpansion states, add the effect (if expanded)
+      expansion == 0 ~ avg_uninsured + estimate,
+    ),
+    actual_label = ifelse(expansion == 1, "Expansion (Actual)", "Non-Expansion (Actual)"),
+    counterfactual_label = ifelse(expansion == 1, "Expansion (Without Expansion)", "Non-Expansion (With Expansion)")
+  )
+```
+
+```{r}
+# now lets put this information into a format we can actually use for the plot
+plot_df <- counterfactual_df |>
+  select(year, expansion, expansion_name, actual_label, counterfactual_label, avg_uninsured, counterfactual) |>
+  pivot_longer(
+    cols = c(avg_uninsured, counterfactual),
+    names_to = "type",
+    values_to = "uninsured_rate"
+  ) |>
+  mutate(
+    line_label = ifelse(type == "avg_uninsured", actual_label, counterfactual_label),
+    line_type = ifelse(type == "avg_uninsured", "solid", "dashed")
+  )
+
+# since we only want to show the counterfactual post treatment year
+# we need to subset the data into pre / post treatment
+pre_df <- plot_df |> 
+  filter(year <= 2013)
+
+post_df <- plot_df |> 
+  filter(year >= 2013)
+
+ribbon_df <- counterfactual_df |> 
+  filter(year >= 2013) |> 
+  select(year, expansion, expansion_name, avg_uninsured, counterfactual)
+```
+
+```{r}
+# this plot will be a differnce-in-difference, showing the trend of uninsured rates
+# from 2010-2023 (excluding 2020) for both expansion and nonexpansion groups
+# it will also show the counterfactuals for each
+ggplot() +
+  # shade the area between the actual and countefactual, to highlight the difference between the two
+  geom_ribbon(data = ribbon_df, aes(x = year, ymin = pmin(avg_uninsured, counterfactual), ymax = pmax(avg_uninsured, counterfactual), fill = expansion_name, group = expansion_name), alpha = 0.15) +
+  # pre treatment actual line (there is no pretreatment counterfactual)
+  geom_line(data = pre_df |> filter(type == "avg_uninsured"), aes(x = year, y = uninsured_rate, color = expansion_name, group = expansion_name), linewidth = 1.2) +
+  # post treatment actual line
+  geom_line(data = post_df |> filter(type == "avg_uninsured"), aes(x = year, y = uninsured_rate, color = expansion_name, group = expansion_name), linewidth = 1.2) +
+  # post treatment counterfactual (lets make it dashed))
+  geom_line(data = post_df |> filter(type == "counterfactual"), aes(x = year, y = uninsured_rate, color = expansion_name, group = expansion_name), linewidth = 0.5, linetype  = "dashed") +
+  # pre and post treatment actual points (for aesthetics, and to make it clearer)
+  geom_point(data = plot_df |> filter(type == "avg_uninsured"), aes(x = year, y = uninsured_rate, color = expansion_name), size = 3) +
+  # # draw a vertical line at 2013, to indicate start of ACA and medicaid expansion
+  # geom_vline(xintercept = 2013, linetype = "dotted", color = "gray40", linewidth  = 0.7) +
+  # # adding an annotation for the vertical line, so the viewer knows that it means
+  # annotate("text", x = 2013.2, y = max(plot_df$uninsured_rate, na.rm = TRUE) - 0.01, label = "ACA Expansion Begins", hjust = 0.00, size = 3.5, color = "gray40", fontface = "italic") +
+  # using our own custom medicaid color palettes
+  scale_color_manual(values = c("Expansion" = medicaid_colors$expansion, "Non-Expansion" = medicaid_colors$nonexpansion)) +
+  scale_fill_manual(values = c("Expansion" = medicaid_colors$expansion, "Non-Expansion" = medicaid_colors$nonexpansion)) +
+  # define our x axis scale
+  scale_x_continuous(breaks = 2010:2023) +
+  # convert our y axis to percent (instead of decimals)
+  scale_y_continuous(labels = scales::percent_format(accuracy = 1), limits = c(0, 0.6)) +
+  # add our title, axis labels and caption
+  labs(
+    # title = "Effect of Medicaid Expansion on Uninsured Rates",
+    # subtitle = "Solid lines = actual  |  Dashed lines = counterfactual  |  Shaded area = estimated effect",
+    x = "",
+    y = "Uninsured Rate",
+    color = "Expansion Status",
+    
+    caption = "Source: ACS PUMS  |  Counterfactual estimated via Difference-in-Differences"
+  ) + 
+  # use our custom mediciad theme and fonts
+  theme_medicaid() +
+  # hide the legend (we will add our own on the poster)
+  theme(
+    legend.position  = "none",
+    panel.grid.minor = element_blank()
+  )
+```
+
+# Plot: State-Specific DiD
+
+```{r}
+# for the state specific counterfactual plots,
+# we need to first calculate the state uninsured rate for each year
+state_avg <- state_year_panel |>
+  group_by(state_name, year) |>
+  summarise(
+    uninsured_rate = weighted.mean(uninsured_rate, n, na.rm = TRUE),
+    .groups = "drop"
+  )
+```
+
+```{r}
+# we will have to repeat this for each state we want a plot for
+# so lets declare it upfront and reuse the variable throghout
+current_state <- "Pennsylvania"
+state_expansion_year <- ifelse(is.na(expansion_years[current_state]), Inf, expansion_years[current_state])
+
+did_coefs <- did_coefs |>
+  complete(year_rel = min(year_rel):max(year_rel)) |>
+  mutate(
+    year = year_rel + 2014,
+    estimate = zoo::na.approx(estimate, na.rm = FALSE),
+    std.error = zoo::na.approx(std.error, na.rm = FALSE),
+    conf.low = zoo::na.approx(conf.low, na.rm = FALSE),
+    conf.high = zoo::na.approx(conf.high, na.rm = FALSE)
+  ) |>
+  filter(year >= 2010, year <= 2023)
+
+# join the did coefs we calculate above to the state specific df
+state_df <- state_avg |>
+  filter(state_name == current_state) |>
+  mutate(
+    year_rel = year - state_expansion_year
+  )
+
+if (is.na(expansion_years[current_state])) {
+  state_df <- state_df |> left_join(did_coefs |> select(year, estimate), by = "year")
+} else {
+  state_df <- state_df |> left_join(did_coefs |> select(year_rel, estimate), by = "year_rel")
+}
+
+state_df <- state_df |>
+  mutate(
+    counterfactual = case_when(
+      is.na(expansion_years[current_state]) & year == 2013 ~ uninsured_rate,
+      is.na(expansion_years[current_state]) & year <  2013 ~ NA_real_,
+      is.na(expansion_years[current_state]) & year >= 2014 ~ uninsured_rate + estimate,
+      year == state_expansion_year - 1 ~ uninsured_rate,
+      year <  state_expansion_year - 1 ~ NA_real_,
+      TRUE ~ uninsured_rate - estimate
+    )
+  ) |>
+  select(year, uninsured_rate, counterfactual)
+
+# add out plot labels and line type (solid or dashed) based on actual or counterfactual
+plot_df <- state_df |>
+  pivot_longer(
+    cols = c(uninsured_rate, counterfactual),
+    names_to = "type",
+    values_to = "uninsured"
+  ) |>
+  mutate(
+    line_label = ifelse(type == "uninsured_rate", "Pennsylvania (Actual)", "Pennsylvania (If Expanded)"),
+    line_type  = ifelse(type == "uninsured_rate", "solid", "dashed")
+  )
+
+split_year <- ifelse(is.na(expansion_years[current_state]), 2013, state_expansion_year - 1)
+
+# categorize based on pre / post ACA expansion (to only show counterfactuals post expansion)
+pre_df  <- plot_df |> filter(year <= split_year)
+post_df <- plot_df |> filter(year >= split_year)
+
+# create ribbon df for shading the area between actual and counterfactual
+ribbon_df <- state_df |>
+  filter(year >= split_year) |>
+  transmute(year, actual = uninsured_rate, counterfactual)
+
+state_color <- ifelse(
+  is.na(expansion_years[current_state]),
+  medicaid_colors$nonexpansion,
+  medicaid_colors$expansion
+)
+
+# start our plot
+ggplot() +
+  # vertical ACA expansion start line (ACA expansion started in Jan 2014)
+  # this is the first layer, so it is in the background, behind everything else
+  geom_vline(
+    xintercept = split_year,
+    linetype   = "dotted",
+    color      = "gray40",
+    linewidth  = 0.7
+  ) +
+  # add pre ACA expansion solid line, actual values (no counterfactuals for the pre expansion period)
+  geom_line(
+    data = pre_df |> filter(type == "uninsured_rate"),
+    aes(x = year, y = uninsured),
+    color     = state_color,
+    linewidth = 1.2
+  ) +
+  # add post ACA expansion solid line, actual values
+  geom_line(
+    data = post_df |> filter(type == "uninsured_rate"),
+    aes(x = year, y = uninsured),
+    color     = state_color,
+    linewidth = 1.2,
+    linetype  = "solid"
+  ) +
+  # add post ACA expansion dashed line, counterfactual values
+  geom_line(
+    data = post_df |> filter(type == "counterfactual"),
+    aes(x = year, y = uninsured),
+    color     = state_color,
+    linewidth = 0.6,
+    linetype  = "dashed"
+  ) +
+  # add points for post ACA expansion actual values
+  geom_point(
+    data = plot_df |> filter(type == "uninsured_rate"),
+    aes(x = year, y = uninsured),
+    color = state_color,
+    size  = 3
+  ) +
+  # add the ribbon to shade the area between actual and counterfactual
+  geom_ribbon(
+    data = ribbon_df,
+    aes(
+      x    = year,
+      ymin = pmin(actual, counterfactual),
+      ymax = pmax(actual, counterfactual)
+    ),
+    fill  = state_color,
+    alpha = 0.15
+  ) +
+  # annotation for ACA expansion start vertical line
+  # annotate(
+  #   "text",
+  #   x        = 2013.2,
+  #   y        = max(plot_df$uninsured, na.rm = TRUE) - 0.01,
+  #   label    = "ACA Expansion Begins",
+  #   hjust    = 0.00,
+  #   size     = 3.5,
+  #   color    = "gray40",
+  #   fontface = "italic"
+  # ) +
+  # adding this to ensure every year is labeled
+  scale_x_continuous(breaks = 2010:2023) +
+  # convert decimals to percent, and add upper limit of 0.6 (above the max uninsured rate, 
+  # ensures all state plots are consistently formatted and comparable side-by-side)
+  scale_y_continuous(labels = scales::percent_format(accuracy = 1), limits = c(0, 0.6)) +
+  # add labels and caption, years are self-explanatory so lets remove it
+  labs(
+    x        = NULL,
+    y        = "Uninsured Rate",
+    caption = "Source: ACS PUMS  |  Counterfactual estimated via Difference-in-Differences"
+  ) +
+  # add our custom medicaid theme
+  theme_medicaid() +
+  # remove legend, no need here
+  theme(
+    legend.position  = "none",
+    panel.grid.minor = element_blank()
+  )
+```
+
+```{r}
+# create a df containing all the columns we need for the json
+state_avg_json <- state_year_panel |>
+  group_by(state_name, year, expansion, expansion_year) |>
+  summarise(
+    uninsured_rate = weighted.mean(uninsured_rate, n, na.rm = TRUE),
+    .groups = "drop"
+  ) |>
+  mutate(
+    state_expansion_year = ifelse(is.na(expansion_year), Inf, expansion_year),
+    year_rel = year - state_expansion_year
+  )
+
+# create seperate df for nonexpansion and expansion states
+never_expanded_json <- state_avg_json |>
+  filter(is.na(expansion_year)) |>
+  left_join(did_coefs |> select(year, estimate), by = "year")
+
+ever_expanded_json <- state_avg_json |>
+  filter(!is.na(expansion_year)) |>
+  left_join(did_coefs |> select(year_rel, estimate), by = "year_rel")
+
+# format into json usable for the website
+state_df_json <- bind_rows(never_expanded_json, ever_expanded_json) |>
+  mutate(
+    uninsured_counterfactual = case_when(
+      is.na(expansion_year) & year == 2013 ~ uninsured_rate,  
+      is.na(expansion_year) & year <  2013 ~ NA_real_,        
+      is.na(expansion_year) & year >= 2014 ~ uninsured_rate + estimate,  
+      year == state_expansion_year - 1     ~ uninsured_rate,       
+      year <  state_expansion_year - 1     ~ NA_real_,             
+      TRUE                                 ~ uninsured_rate - estimate
+    )
+  ) |>
+  select(state_name, year, expansion, expansion_year, uninsured_rate, uninsured_counterfactual) |>
+  arrange(state_name, year)
+
+# save the json for the website
+# write_json(state_df_json, "json/state-counterfactual.json", pretty = TRUE, auto_unbox = TRUE)
+```
+
+```{r}
+# we will have to repeat this for each state
+# so lets declare it upfront and reuse the variable throghout
+current_state = "Massachusetts"
+
+# first we need the population count for low income adults per state per year
+# this gives us the denominator to convert rates to headcounts
+state_population <- acs_2023 |>
+  filter(low_income == 1) |>
+  group_by(state_name, year) |>
+  summarise(
+    pop = sum(as.numeric(PWGTP)),
+    .groups = "drop"
+  )
+
+# pull the selected states data
+selected_state_data <- state_df_json |>
+  filter(state_name == current_state)
+
+# get 2023 data
+snapshot_2023 <- selected_state_data |>
+  filter(year == 2023)
+
+# get population for headline number
+selected_pop <- state_population |>
+  filter(state_name == current_state, year == 2023)
+
+# compute headline number
+actual_rate <- snapshot_2023$uninsured_rate
+counterfactual_rate <- snapshot_2023$uninsured_counterfactual
+rate_gap <- abs(actual_rate - counterfactual_rate)
+people_gap <- round(rate_gap * selected_pop$pop)
+expansion_status <- !is.na(snapshot_2023$expansion_year)
+state_color <- ifelse(expansion_status, medicaid_colors$expansion, medicaid_colors$nonexpansion)
+
+# label depends on expansion status
+headline_label <- ifelse(
+  expansion_status,
+  "people covered due to expansion (2023)",
+  "people left uninsured due to non-expansion (2023)"
+)
+
+# 2023 bar data 
+bar_df <- tibble(
+  label = c("Actual", "Counterfactual"),
+  rate  = c(actual_rate, counterfactual_rate)
+)
+
+# create the uninsured population due to expansion decision visual
+ggplot() +
+  annotate(
+    "text",
+    x = 0.5, y = 0.7,
+    label = scales::comma(people_gap),
+    size = 22,
+    fontface = "bold",
+    color = state_color,
+    hjust = 0.5
+  ) +
+  annotate(
+    "text",
+    x = 0.5, y = 0.25,
+    label = headline_label,
+    size = 4.5,
+    color = "gray40",
+    hjust = 0.5,
+    fontface = "italic"
+  ) +
+  # annotate(
+  #   "text",
+  #   x = 0.5, y = 0.05,
+  #   label = current_state,
+  #   size  = 5.5,
+  #   color = "gray20",
+  #   hjust = 0.5,
+  #   fontface = "bold"
+  # ) +
+  scale_x_continuous(limits = c(0, 1)) +
+  scale_y_continuous(limits = c(0, 1)) +
+  theme_void()
+
+# create bar indicating percent of low income unisured for 2023
+ggplot() +
+  # gray background
+  annotate(
+    "rect",
+    xmin = 0, xmax = 1,
+    ymin = 0.3, ymax = 0.7,
+    fill = "gray92",
+    color = NA
+  ) +
+  # percent of low income uninsured for 2023
+  annotate(
+    "rect",
+    xmin = 0,
+    xmax = actual_rate,
+    ymin = 0.3,
+    ymax = 0.7,
+    fill = state_color,
+    alpha = 0.85,
+    color = NA
+  ) +
+  # rate label inside bar
+  annotate(
+    "text",
+    x = actual_rate / 2,
+    y = 0.5,
+    label = scales::percent(actual_rate, accuracy = 0.1),
+    color = "white",
+    size = 4.5,
+    fontface = "bold"
+  ) +
+  # format x axis as percent instead of fraction
+  scale_x_continuous(
+    labels = scales::percent_format(accuracy = 1),
+    limits = c(0, 1)
+  ) +
+  # y axis should fill the height of the bar
+  scale_y_continuous(limits = c(0, 1)) +
+  # main label / title
+  labs(x = "Uninsured Rate (2023)", y = NULL) +
+  # apply custom themes
+  theme_medicaid() +
+  theme(
+    axis.text.y = element_blank(),
+    axis.ticks.y = element_blank(),
+    panel.grid = element_blank()
+  )
+```
