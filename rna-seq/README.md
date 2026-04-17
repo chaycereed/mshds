@@ -27,7 +27,7 @@ If GitHub does not display it directly, click **Raw** or **Download** to view th
 
 ---
 
-## ▶️ Running the Notebook Yourself
+## Running the Notebook Yourself
 
 1. Place your RNA-seq files inside a `data/` folder:  
    - `counts.csv` — raw count matrix (genes × samples)  

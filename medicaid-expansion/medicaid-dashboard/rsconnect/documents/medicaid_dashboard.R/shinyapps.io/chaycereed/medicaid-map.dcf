@@ -1,0 +1,10 @@
+name: medicaid-map
+title:
+username: chaycereed
+account: chaycereed
+server: shinyapps.io
+hostUrl: https://api.shinyapps.io/v1
+appId: 16843115
+bundleId: 11681026
+url: https://chaycereed.shinyapps.io/medicaid-map/
+version: 1
