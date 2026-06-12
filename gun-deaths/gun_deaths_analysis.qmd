@@ -1,0 +1,497 @@
+---
+title: "Study: Gun Deaths"
+author: "Chayce Reed"
+format: html
+editor: visual
+---
+
+## Week 3: Hackathon
+
+```{r}
+library(tidyverse)
+library(RCPA3)
+library(forcats)
+library(ggimage)
+```
+
+```{r}
+# data(package = "RCPA3")
+```
+
+```{r}
+# data(states)
+# ?states
+```
+
+```{r}
+# glimpse(states)
+```
+
+```{r}
+head(states)
+```
+
+```{r}
+unique(states$state)
+```
+
+```{r}
+cat(colnames(states))
+```
+
+```{r}
+crime_cols <- c("state", "population", "crime.rate.burglary", "crime.rate.murder", "crime.rate.property", "crime.rate.violent", "gun.bgchecks", "gun.dealers", "gun.deaths.100k", "gun.murders", "gunlaws", "gunlaws.3cat", "abortlaws", "abortlaws.3cat")
+
+crime <- states[, crime_cols]
+crime
+```
+
+```{r}
+sum(states$population)
+```
+
+```{r}
+library(dplyr)
+library(gt)
+
+top5_murders <- crime %>%
+  arrange(desc(gun.murders)) %>%
+  slice(1:10) %>%
+  mutate(Rank = row_number()) %>%
+  select(
+    Rank,
+    State = state,
+    Rate = gun.murders
+  )
+
+top5_murders %>%
+  gt() %>%
+  fmt_number(columns = Rate, decimals = 2) %>%
+  cols_label(
+    Rate = "Gun Murder Rate (per 100k)"
+  ) %>%
+  tab_header(
+    title = md("**Top 5 States: Gun Murder Rate**")
+  ) %>%
+  cols_align(
+    align = "center",
+    columns = Rank
+  ) %>%
+  cols_align(
+    align = "left",
+    columns = State
+  ) %>%
+  cols_align(
+    align = "right",
+    columns = Rate
+  ) %>%
+  tab_options(
+    table.font.size = 14,
+    column_labels.font.weight = "bold"
+  )
+```
+
+```{r}
+top5_deaths <- crime %>%
+  arrange(desc(gun.deaths.100k)) %>%
+  slice(1:10) %>%
+  mutate(Rank = row_number()) %>%
+  select(
+    Rank,
+    State = state,
+    Rate = gun.deaths.100k
+  )
+
+top5_deaths %>%
+  gt() %>%
+  fmt_number(columns = Rate, decimals = 2) %>%
+  cols_label(
+    Rate = "Gun Death Rate (per 100k)"
+  ) %>%
+  tab_header(
+    title = md("**Top 5 States: Gun Death Rate**")
+  ) %>%
+  cols_align(
+    align = "center",
+    columns = Rank
+  ) %>%
+  cols_align(
+    align = "left",
+    columns = State
+  ) %>%
+  cols_align(
+    align = "right",
+    columns = Rate
+  ) %>%
+  tab_options(
+    table.font.size = 14,
+    column_labels.font.weight = "bold"
+  )
+```
+
+```{r}
+ggplot(crime, aes(x = gun.deaths.100k, y = reorder(state, gun.deaths.100k), fill = gunlaws.3cat)) +
+  geom_col() +
+  scale_fill_manual(values = c("#641220", "#a11d33", "#e01e37"))
+```
+
+```{r}
+# install.packages("usmap")
+library(usmap)
+
+png(
+  filename = paste0("us_map.png"),
+  width = 4000,
+  height = 2000,
+  res = 300
+)
+
+states_sf <- usmap::us_map(regions = "states")
+sf::st_geometry(states_sf) <- "geom"
+
+map_data <- states_sf %>%
+  left_join(crime, by = c("full" = "state"))
+
+# KEEP sf geometry (do NOT use subset())
+outline_sf <- map_data %>%
+  filter(gunlaws.3cat == "Few regs")
+
+plot_usmap(
+  data = crime,
+  values = "gun.deaths.100k",
+  labels = FALSE
+) +
+  scale_fill_gradient(low = "#c1121f", high = "#38040e", name = "Deaths / 100k") +
+  geom_sf(
+    data = outline_sf,
+    inherit.aes = FALSE,
+    fill = NA,
+    color = "black",
+    linewidth = 2.0
+  ) +
+  theme_void()
+
+dev.off()
+```
+
+```{r}
+# get states
+states_sf <- usmap::us_map(regions = "states")
+sf::st_geometry(states_sf) <- "geom"
+
+# join data
+map_data <- states_sf %>%
+  left_join(crime, by = c("full" = "state"))
+
+ggplot(map_data) +
+  
+  # base layer: same color, varying opacity
+  geom_sf(
+    aes(alpha = gun.deaths.100k),
+    fill = "red",
+    color = "white",
+    linewidth = 0.3
+  ) +
+  
+  # outline low regulation states
+  geom_sf(
+    data = subset(map_data, gunlaws.3cat == "low"),
+    fill = NA,
+    color = "red",
+    linewidth = 1.4
+  ) +
+  
+  scale_alpha(
+    range = c(0.30, 0.99),
+    name = "Deaths per 100k"
+  ) +
+  
+  theme_void() +
+  
+  labs(
+    title = "Gun Deaths per 100k by State",
+    subtitle = "Higher opacity indicates higher death rates\nStates with weaker gun laws are outlined"
+  )
+```
+
+```{r}
+library(sf)
+
+states_sf <- usmap::us_map(regions = "states")  # has: fips, abbr, full, geom
+
+# centroids (one point per state)
+centroids <- states_sf %>%
+  mutate(.pt = st_centroid(geom),
+         lon = st_coordinates(.pt)[,1],
+         lat = st_coordinates(.pt)[,2]) %>%
+  st_drop_geometry() %>%
+  select(full, lon, lat)
+
+# join to your data (full state names)
+crime2 <- crime %>%
+  left_join(centroids, by = c("state" = "full"))
+
+# proportional-symbol map (more interesting than choropleth)
+ggplot(states_sf) +
+  geom_sf(fill = "gray92", color = "white", linewidth = 0.25) +
+  geom_point(
+    data = crime2,
+    aes(x = lon, y = lat, size = gun.deaths.100k, color = gunlaws.3cat),
+    alpha = 0.85
+  ) +
+  geom_point(
+    data = crime2,
+    aes(x = lon, y = lat),
+    color = "white",
+    alpha = 0.85
+  ) +
+  scale_color_manual(values = c("#641220", "#a11d33", "#e01e37")) +
+  scale_size(range = c(2.5, 10)) +
+  theme_void()
+```
+
+```{r}
+library(usmap)
+library(sf)
+library(dplyr)
+library(ggplot2)
+library(grid)
+library(png)
+library(scales)
+
+# --- 1) Get state geometry + centroids (full state names) ---
+states_sf <- usmap::us_map(regions = "states")
+
+centroids <- states_sf %>%
+  mutate(.pt = st_centroid(geom),
+         lon = st_coordinates(.pt)[,1],
+         lat = st_coordinates(.pt)[,2]) %>%
+  st_drop_geometry() %>%
+  select(full, lon, lat)
+
+crime2 <- crime %>%
+  left_join(centroids, by = c("state" = "full"))
+
+# --- 2) Download + read the splat image once ---
+img_url  <- "https://freesvg.org/img/1526478173.png"
+img_file <- tempfile(fileext = ".png")
+download.file(img_url, img_file, mode = "wb")
+splat_png <- readPNG(img_file)
+
+# --- 3) Build one annotation layer per state (size scaled by deaths) ---
+# Size is in "map degrees" — tune these two numbers.
+crime2 <- crime2 %>%
+  mutate(s = rescale(gun.deaths.100k, to = c(0.6, 2.0)))  # <- adjust range for bigger/smaller splats
+
+splat_layers <- lapply(seq_len(nrow(crime2)), function(i) {
+  row <- crime2[i, ]
+  if (any(!is.finite(c(row$lon, row$lat, row$s)))) return(NULL)
+
+  rg <- rasterGrob(splat_png, interpolate = TRUE)
+
+  annotation_custom(
+    rg,
+    xmin = row$lon - row$s, xmax = row$lon + row$s,
+    ymin = row$lat - row$s, ymax = row$lat + row$s
+  )
+})
+
+# --- 4) Plot (light theme) ---
+p <- ggplot(states_sf) +
+  geom_sf(fill = "gray97", color = "white", linewidth = 0.35) +
+  splat_layers +
+  coord_sf(expand = FALSE) +
+  labs(
+    title = "Gun Deaths per 100k — Splat Map",
+    subtitle = "Splat size scales with gun deaths per 100k (one splat per state)"
+  ) +
+  theme_void()
+
+p
+```
+
+```{r}
+ggplot(crime, aes(x = gunlaws.3cat, y = gun.deaths.100k)) +
+  # geom_boxplot(median.linewidth = 0, fill = "red", color = "red", alpha = 0.6) +
+  geom_violin(fill = "red", color = "red", alpha = 0.6) +
+  stat_summary(fun.y = median, geom = "point", shape = 10, size = 12, color = "black", fill = "black") +
+  geom_jitter(width = 0.15, color = "white", size = 2) +
+  theme_minimal()
+```
+
+```{r}
+means <- crime |> 
+  group_by(gunlaws.3cat)  |> 
+  summarize(mean_rate = mean(gun.deaths.100k))
+
+# png(
+#   filename = paste0("gun_laws.png"),
+#   width = 4000,
+#   height = 3000,
+#   res = 300
+# )
+
+ggplot(crime, aes(x = gunlaws.3cat, y = gun.deaths.100k)) +
+  geom_image(
+    data = means,
+    aes(x = gunlaws.3cat,
+        y = mean_rate,
+        image = "https://cdn11.bigcommerce.com/s-hwgd8whbif/images/stencil/1280x1280/products/305/995/37013-es-12in-bullseye__89966.1522465757.jpg"),
+    size = 0.40
+  ) +
+  geom_jitter(width = 0.1, color = "white", size = 3) +
+  labs(
+    x = "Number of Gun Control Laws",
+    y = "Gun Deaths (per 100,000 population)"
+  ) +
+  theme_minimal() +
+  theme(
+    axis.title = element_text(face = "bold"),
+  )
+
+# dev.off()
+```
+
+```{r}
+ggplot(crime, aes(fill = crime$gunlaws.3cat)) +
+  geom_col(data = crime, aes(x = gun.deaths.100k, y = reorder(state, gun.deaths.100k)), alpha = 0.6) +
+  geom_col(data = crime, aes(x = gun.murders, y = reorder(state, gun.deaths.100k)))
+  
+```
+
+```{r}
+ggplot(crime, aes(x = gun.murders, y = reorder(state, gun.murders), fill = gunlaws.3cat)) +
+  geom_col()
+```
+
+```{r}
+ggplot(crime, aes(x = state, y = gun.deaths.100k)) +
+  # geom_bar(stat = "identity") +
+  geom_segment(aes(x = state, xend = state, y = 0, yend = gun.deaths.100k)) +
+  ylim(-2, 30) +
+  coord_polar(start = 0)
+
+```
+
+```{r}
+ggplot(crime, aes(x = gun.deaths.100k, y = gunlaws)) +
+  geom_point() +
+  geom_smooth(method = "lm")
+```
+
+```{r}
+ggplot(data = crime, aes(x = state, y = gun.murders)) +
+  geom_col(fill = "red") +
+  scale_x_discrete(position = "top") +
+  scale_y_reverse() +
+  theme(axis.text.x = element_text(angle = 90))
+```
+
+```{r}
+  # png(
+  #   filename = paste0("gun_murder_rates.png"),
+  #   width = 3000,
+  #   height = 6000,
+  #   res = 300
+  # )
+
+ggplot(data = crime, aes(x = state, y = gun.murders)) +
+  geom_point(color = "red", size = 4) +
+  geom_segment(aes(x = state, xend = state, y = 0, yend = gun.murders), color = "red", size = 4) +
+  scale_x_discrete(position = "top") +
+  scale_y_reverse(expand = c(0, 0)) +
+  coord_cartesian(clip = "off") +
+  labs(
+    x = "",
+    y = "Gun Murder Rate (per 100,000 population)"
+  ) +
+  theme_minimal() +
+  theme(
+    axis.text.x.top = element_text(angle = 90, hjust = 0, vjust = 0.5, face = "bold"),
+  ) 
+
+# dev.off()
+
+```
+
+```{r}
+library(personograph)
+
+avg_crime_murders = mean(crime$crime.rate.murder)
+avg_gun_murders = mean(crime$gun.murders)
+gun_to_crime_murders <- avg_gun_murders / avg_crime_murders
+
+
+murder_prop <- list(
+  "Other Crime Murders" = 1 - gun_to_crime_murders,
+  "Gun Murders" = gun_to_crime_murders
+)
+
+personograph(murder_prop, n.icons = 100, icon.style = 6, color = list("Gun Murders" = "red", "Other Crime Murders" = "gray"))
+```
+
+```{r}
+state_murders <- crime |> 
+  group_by(state) |> 
+  summarize(
+    murder_prop = gun.murders / crime.rate.murder
+  ) |> 
+  mutate(
+    gun_murder_prop = murder_prop,
+    other_murder_prop = 1 - murder_prop
+  )
+
+par(mfrow = c(5, 10), mar = c(1, 0.5, 1.5, 0.5))
+
+for (i in 1:nrow(state_murders)) {
+  
+  props <- list(
+    "Other" = state_murders$other_murder_prop[i],
+    "Gun" = state_murders$gun_murder_prop[i]
+  )
+  
+  personograph(props, n.icons = 100, icon.style = 6, color = list("Gun" = "red", "Other" = "gray"), plot.width = 0.95, fig.title = state_murders$state[i])
+}
+
+par(mfrow = c(1, 1))
+```
+
+```{r}
+library(grid)
+
+state_gun_deaths <- crime |> 
+  group_by(state) |> 
+  summarize(
+    murder_prop = gun.murders / gun.deaths.100k
+  ) |> 
+  mutate(
+    murder_prop = murder_prop,
+    other_prop = 1 - murder_prop
+  )
+
+for (i in 1:nrow(state_gun_deaths)) {
+  
+  props <- list(
+    "Other" = state_gun_deaths$other_prop[i],
+    "Murder" = state_gun_deaths$murder_prop[i]
+  )
+  
+  png(
+    filename = paste0("personograph/", state_gun_deaths$state[i], ".png"),
+    width = 1000,
+    height = 1000,
+    res = 300
+  )
+  
+  personograph(props, n.icons = 100, icon.style = 6, color = list("Murder" = "red", "Other" = "gray"), plot.width = 0.95, fig.title = state_gun_deaths$state[i])
+  
+  dev.off()
+}
+
+```
+
+```{r}
+ggplot(crime, aes(x = abortlaws.3cat, y = gunlaws.3cat, fill = gun.deaths.100k)) +
+  geom_tile() +
+  scale_fill_gradient(low = "pink", high = "red")
+```
