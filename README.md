@@ -25,7 +25,7 @@ Projects in this repository span exploratory analyses, methodological walk-throu
 │   ├── medicaid-dashboard/
 │   │   ├── medicaid_dashboard.R
 │   │   ├── medicaid-dashboard.Rproj
-│   │   └── data/            # .rds inputs (not included in repo)
+│   │   └── data/            # prebuilt .rds inputs (not included in repo)
 │   └── production/
 │       ├── medicaid-map.qmd
 │       └── medicaid-expansion-poster.pdf
@@ -81,7 +81,7 @@ A Shiny application deployed to shinyapps.io:
 
 - `medicaid_dashboard.R` — Shiny `app.R` source
 - `medicaid-dashboard.Rproj` — RStudio project file
-- `data/` — `.rds` inputs (`map_summary`, `fpl_coverage_df`, `avg_df`; not included in repo)
+- `data/` — prebuilt `.rds` inputs the app loads (`map_summary`, `fpl_coverage_df`, `avg_df`; not included in repo)
 
 ---
 
