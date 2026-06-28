@@ -10,6 +10,21 @@ Projects in this repository span exploratory analyses, methodological walk-throu
 
 ---
 
+## Highlights
+
+Click any image to explore the project.
+
+<div align="center">
+
+| | | |
+|:---:|:---:|:---:|
+| [![Medicaid Expansion](medicaid-expansion/medicaid-expansion-poster.png)](https://medicaid-map.com) | [![Gun Deaths](gun-deaths/gun_deaths_poster.png)](gun-deaths/) | [![RNA-seq](rna-seq/figures/heatmap.png)](rna-seq/) |
+| **Medicaid Expansion**<br>Website: [medicaid-map.com](https://medicaid-map.com) | **Gun Deaths**<br>State-level exploratory analysis | **RNA-seq**<br>[Knitted report](https://htmlpreview.github.io/?https://github.com/chaycereed/mshds/blob/main/rna-seq/rna-seq.html) |
+
+</div>
+
+---
+
 ## Repository Structure
 
 ```text
