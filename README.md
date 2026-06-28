@@ -1,12 +1,6 @@
 # MSHDS Repository
 
-This repository collects my work for the **Master of Science in Health Data Science (MSHDS)** program.  
-It serves as a centralized home for coursework, applied analyses, reproducible workflows, and technical demonstrations completed throughout the degree.  
-
-The focus is on developing clear, well-documented computational work that reflects the core skills of the program:  
-data wrangling, statistical programming, reproducible research, modeling, and communication.
-
-Projects in this repository span exploratory analyses, methodological walk-throughs, small research tools, and structured assignments that illustrate the progression of skills gained during the program.
+This repository collects some of my work for the **Master of Science in Health Data Science (MSHDS)** program.  
 
 ---
 
