@@ -1,6 +1,6 @@
 # MSHDS Repository
 
-This repository collects some of my work for the **Master of Science in Health Data Science (MSHDS)** program.  
+This repository collects some of my work and projects for the **Master of Science in Health Data Science (MSHDS)** program.  
 
 ---
 
